@@ -19,6 +19,9 @@ from .scanning import prepare_scanning_workspace, run_resolve, run_network_disco
 app = typer.Typer(help="DeepDomain — modular recon & scanning scaffold")
 console = Console()
 
+# Version information
+__version__ = "1.0.0"
+
 # Tools used across the flow (modify per your final toolset)
 DEFAULT_TOOLS = [
     "nmap", "nikto", "subfinder", "sublist3r", "theHarvester", "shodan",
@@ -45,6 +48,16 @@ def _print_success(message: str):
 def _print_info(message: str):
     """Print an info message"""
     console.print(f"ℹ {message}", style="dim")
+
+
+@app.callback()
+def version_callback(
+    version: bool = typer.Option(False, "--version", "-v", help="Show version and exit")
+):
+    """Show version information and exit."""
+    if version:
+        console.print(f"DeepDomain version {__version__}")
+        raise typer.Exit()
 
 @app.command()
 def run(

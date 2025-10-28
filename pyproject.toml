@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepdomain"
+version = "1.0.0"
+description = "A comprehensive cybersecurity reconnaissance and scanning tool for Kali Linux"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "DeepDomain Team", email = "team@deepdomain.dev"},
+]
+maintainers = [
+    {name = "DeepDomain Team", email = "team@deepdomain.dev"},
+]
+keywords = [
+    "cybersecurity",
+    "reconnaissance", 
+    "penetration-testing",
+    "security-scanning",
+    "kali-linux",
+    "red-team",
+    "vulnerability-assessment"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Topic :: Security",
+    "Topic :: System :: Networking",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console",
+]
+dependencies = [
+    "typer[all]>=0.9.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "httpx>=0.24.0",
+    "requests>=2.31.0",
+    "shodan>=1.30.0",
+    "tqdm>=4.65.0",
+    "python-magic>=0.4.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/deepdomain"
+Documentation = "https://github.com/yourusername/deepdomain#readme"
+Repository = "https://github.com/yourusername/deepdomain.git"
+Issues = "https://github.com/yourusername/deepdomain/issues"
+Changelog = "https://github.com/yourusername/deepdomain/blob/main/CHANGELOG.md"
+
+[project.scripts]
+deepdomain = "src.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.sh"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]

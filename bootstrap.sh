@@ -106,26 +106,45 @@ python -m pip install -r "${REQ_FILE}"
 # Install Go-based tools (subfinder, dnsx, httpx, theHarvester)
 PRINT_NOTICE "Installing Go-based reconnaissance tools..."
 
-# Check if Go is installed, install if not
+# Provide instructions if Go is missing; otherwise install tools
 if ! command -v go >/dev/null 2>&1; then
-  PRINT_NOTICE "Installing Go..."
-  GO_VERSION="1.21.5"
-  wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
-  sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
-  rm "go${GO_VERSION}.linux-amd64.tar.gz"
-  echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile
+  PRINT_NOTICE "Go is not installed. Skipping Go tool installation."
+  cat <<'GOINSTALL'
+Go is required to install subfinder, dnsx, httpx, and theHarvester.
+
+Install Go (choose one):
+
+Option A: Debian/Ubuntu packages (simplest)
+  sudo apt-get update -y
+  sudo apt-get install -y golang
+
+Option B: Official tarball (latest stable)
+  GO_VERSION="$(curl -s https://go.dev/VERSION?m=text | head -n1)"
+  wget "https://go.dev/dl/${GO_VERSION}.linux-amd64.tar.gz"
+  sudo rm -rf /usr/local/go
+  sudo tar -C /usr/local -xzf "${GO_VERSION}.linux-amd64.tar.gz"
+  rm "${GO_VERSION}.linux-amd64.tar.gz"
+  echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
   export PATH=$PATH:/usr/local/go/bin
+
+After installing Go, ensure your GOPATH bin is on PATH:
+  echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.bashrc
+  export PATH=$PATH:$(go env GOPATH)/bin
+
+Then re-run this script:
+  bash bootstrap.sh
+GOINSTALL
+else
+  PRINT_NOTICE "Go detected: $(go version)"
+  PRINT_NOTICE "Installing subfinder, dnsx, httpx, theHarvester..."
+  go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+  go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+  go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+  go install -v github.com/laramies/theHarvester@latest
+
+  # Add Go bin to PATH for this session
+  export PATH=$PATH:$(go env GOPATH)/bin
 fi
-
-# Install Go tools
-PRINT_NOTICE "Installing subfinder, dnsx, httpx, theHarvester..."
-go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install -v github.com/laramies/theHarvester@latest
-
-# Add Go bin to PATH for this session
-export PATH=$PATH:$(go env GOPATH)/bin
 
 # Install shodan CLI if not present
 if ! command -v shodan >/dev/null 2>&1; then
