@@ -18,16 +18,21 @@ from textual.scroll_view import ScrollView
 from textual.worker import Worker, WorkerState
 from rich.text import Text
 
+from .atomic_ops import AsyncCommandRunner, TUIUpdateManager, atomic_writer
+
 
 class StatusPanel(ScrollableContainer):
     """Left panel showing status updates and phase information"""
     
     can_focus = True
     
+    # Reactive properties for atomic updates
+    current_phase = reactive("Initializing")
+    phase_progress = reactive(0)
+    status_messages = reactive([])
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.current_phase = "Initializing"
-        self.phase_progress = 0
         self.total_phases = 3
         
     def compose(self) -> ComposeResult:
@@ -36,18 +41,38 @@ class StatusPanel(ScrollableContainer):
         yield Label("", id="current-phase")
         yield RichLog(id="status-messages", wrap=True, highlight=True, markup=True)
     
-    def update_phase(self, phase: str, progress: int = 0):
-        """Update the current phase and progress"""
-        self.current_phase = phase
-        self.phase_progress = progress
+    def watch_current_phase(self, phase: str) -> None:
+        """React to phase changes"""
         try:
             self.query_one("#current-phase", Label).update(f"Phase: {phase}")
-            self.query_one("#phase-progress", ProgressBar).update(progress=progress)
-        except:
+        except Exception:
             pass
     
+    def watch_phase_progress(self, progress: int) -> None:
+        """React to progress changes"""
+        try:
+            self.query_one("#phase-progress", ProgressBar).update(progress=progress)
+        except Exception:
+            pass
+    
+    def watch_status_messages(self, messages: list) -> None:
+        """React to status message changes"""
+        try:
+            log = self.query_one("#status-messages", RichLog)
+            # Only add new messages to avoid duplicates
+            if messages and len(messages) > len(log.lines):
+                new_message = messages[-1]
+                log.write(new_message)
+        except Exception:
+            pass
+    
+    def update_phase(self, phase: str, progress: int = 0):
+        """Update the current phase and progress atomically"""
+        self.current_phase = phase
+        self.phase_progress = progress
+    
     def add_status_message(self, message: str, msg_type: str = "info"):
-        """Add a status message to the panel"""
+        """Add a status message to the panel atomically"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         
         # Color-coded icons and messages
@@ -66,18 +91,12 @@ class StatusPanel(ScrollableContainer):
         
         formatted_msg = f"[dim]{timestamp}[/dim] [{color}]{icon}[/{color}] {message}"
         
-        try:
-            log = self.query_one("#status-messages", RichLog)
-            log.write(formatted_msg)
-        except:
-            pass
+        # Update reactive property
+        self.status_messages = self.status_messages + [formatted_msg]
     
     def clear_messages(self):
         """Clear all status messages"""
-        try:
-            self.query_one("#status-messages", RichLog).clear()
-        except:
-            pass
+        self.status_messages = []
 
 
 class LiveOutputPanel(ScrollableContainer):
@@ -137,7 +156,7 @@ class LiveOutputPanel(ScrollableContainer):
 
 
 class DeepDomainTUI(App):
-    """Main TUI application for DeepDomain"""
+    """Main TUI application for DeepDomain with atomic updates"""
     
     CSS = """
     Screen {
@@ -229,10 +248,12 @@ class DeepDomainTUI(App):
         self.output_dir = output_dir
         self.status_panel: Optional[StatusPanel] = None
         self.output_panel: Optional[LiveOutputPanel] = None
-        self.running_processes = {}
-        self.process_counter = 0
         self.scanning_callback = scanning_callback
         self.scanning_started = False
+        
+        # Initialize async components
+        self.command_runner = AsyncCommandRunner(max_concurrent=8)
+        self.update_manager = TUIUpdateManager(self)
         
     def compose(self) -> ComposeResult:
         yield Header()
@@ -243,8 +264,12 @@ class DeepDomainTUI(App):
             yield self.output_panel
         yield Footer()
     
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         """Initialize the TUI when mounted"""
+        # Start the update manager
+        await self.update_manager.start()
+        
+        # Initial status updates
         self.status_panel.add_status_message(f"DeepDomain initialized for {self.domain}", "info")
         self.status_panel.add_status_message(f"Output directory: {self.output_dir}", "info")
         self.status_panel.update_phase("Ready", 0)
@@ -254,30 +279,25 @@ class DeepDomainTUI(App):
             self.scanning_started = True
             self.set_timer(1.0, self.start_scanning)
     
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        """Handle worker state changes for live command output"""
-        worker = event.worker
-        if worker.name.startswith("command_"):
-            if event.state == WorkerState.SUCCESS:
-                # Command completed successfully
-                stdout, stderr, return_code = worker.result
-                self.finish_command()
-                if return_code != 0:
-                    self.add_status_message(f"Command failed with return code {return_code}", "error")
-                else:
-                    self.add_status_message("Command completed successfully", "success")
-            elif event.state == WorkerState.ERROR:
-                # Command failed
-                self.finish_command()
-                self.add_status_message(f"Command error: {worker.error}", "error")
+    async def on_unmount(self) -> None:
+        """Clean up when TUI is unmounted"""
+        await self.update_manager.stop()
+        self.command_runner.stop_all_processes()
     
     def start_scanning(self):
-        """Start the scanning process"""
+        """Start the scanning process asynchronously"""
         if self.scanning_callback:
-            try:
-                self.scanning_callback(self)
-            except Exception as e:
-                self.add_status_message(f"Scanning error: {str(e)}", "error")
+            # Run scanning in background to avoid blocking TUI
+            asyncio.create_task(self._run_scanning_async())
+    
+    async def _run_scanning_async(self):
+        """Run scanning callback asynchronously"""
+        try:
+            # Run the scanning callback in a thread to avoid blocking
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.scanning_callback, self)
+        except Exception as e:
+            self.add_status_message(f"Scanning error: {str(e)}", "error")
     
     def action_quit(self) -> None:
         """Quit the application"""
@@ -345,139 +365,67 @@ class DeepDomainTUI(App):
         if self.output_panel:
             self.output_panel.finish_command()
     
-    def run_command_live(self, command: str, workdir: Path) -> tuple[str, str, int]:
-        """
-        Run a command with live output streaming to the TUI.
-        Returns (stdout, stderr, returncode)
-        This method should be called from a background thread.
-        """
-        try:
-            # Start the process
-            process = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=workdir,
-                bufsize=1,
-                universal_newlines=True
-            )
-            
-            # Store process reference
-            self.process_counter += 1
-            process_id = self.process_counter
-            self.running_processes[process_id] = process
-            
-            stdout_lines = []
-            stderr_lines = []
-            
-            # Read output line by line
-            while True:
-                output = process.stdout.readline()
-                if output == '' and process.poll() is not None:
-                    break
-                if output:
-                    stdout_lines.append(output.strip())
-                
-                # Also read stderr
-                error = process.stderr.readline()
-                if error:
-                    stderr_lines.append(error.strip())
-            
-            # Wait for process to complete
-            return_code = process.wait()
-            
-            # Clean up
-            if process_id in self.running_processes:
-                del self.running_processes[process_id]
-            
-            return '\n'.join(stdout_lines), '\n'.join(stderr_lines), return_code
-            
-        except Exception as e:
-            return "", str(e), 1
-    
-    def run_command_async(self, command: str, workdir: Path, callback: Optional[Callable] = None) -> None:
+    async def run_command_async(self, command: str, workdir: Path, callback: Optional[Callable] = None) -> None:
         """
         Run a command asynchronously with live output streaming.
-        The callback will be called with (stdout, stderr, returncode) when complete.
+        This is the main method that should be used for command execution.
         """
-        def run_command_worker():
-            """Worker function that runs the command"""
-            try:
-                # Start the process
-                process = subprocess.Popen(
-                    command,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    cwd=workdir,
-                    bufsize=1,
-                    universal_newlines=True
-                )
-                
-                # Store process reference
-                self.process_counter += 1
-                process_id = self.process_counter
-                self.running_processes[process_id] = process
-                
-                stdout_lines = []
-                stderr_lines = []
-                
-                # Read output line by line and update UI live
-                while True:
-                    output = process.stdout.readline()
-                    if output == '' and process.poll() is not None:
-                        break
-                    if output:
-                        stdout_lines.append(output.strip())
-                        # Use call_from_thread for live updates
-                        try:
-                            self.call_from_thread(self.add_command_output, output)
-                        except:
-                            pass
-                    
-                    # Also read stderr
-                    error = process.stderr.readline()
-                    if error:
-                        stderr_lines.append(error.strip())
-                        try:
-                            self.call_from_thread(self.add_command_output, error)
-                        except:
-                            pass
-                
-                # Wait for process to complete
-                return_code = process.wait()
-                
-                # Clean up
-                if process_id in self.running_processes:
-                    del self.running_processes[process_id]
-                
-                return '\n'.join(stdout_lines), '\n'.join(stderr_lines), return_code
-                
-            except Exception as e:
-                return "", str(e), 1
+        def output_callback(text: str):
+            """Callback for command output"""
+            self.add_command_output(text)
+        
+        def error_callback(text: str):
+            """Callback for command errors"""
+            self.add_command_output(f"[red]ERROR: {text}[/red]")
         
         # Start the command tracking
         self.start_command(command)
         
-        # Use Textual's run_worker for proper async execution
-        self.run_worker(
-            run_command_worker,
-            name=f"command_{self.process_counter}",
-            thread=True,
-            exclusive=False
-        )
+        try:
+            # Run command asynchronously
+            stdout, stderr, return_code = await self.command_runner.run_command_async(
+                command, 
+                workdir, 
+                output_callback=output_callback,
+                error_callback=error_callback
+            )
+            
+            # Mark command as finished
+            self.finish_command()
+            
+            # Handle completion
+            if return_code != 0:
+                self.add_status_message(f"Command failed with return code {return_code}", "error")
+            else:
+                self.add_status_message("Command completed successfully", "success")
+            
+            # Call user callback if provided
+            if callback:
+                callback(stdout, stderr, return_code)
+                
+        except Exception as e:
+            self.finish_command()
+            self.add_status_message(f"Command error: {str(e)}", "error")
+            if callback:
+                callback("", str(e), 1)
     
-    def stop_all_processes(self):
-        """Stop all running processes"""
-        for process in self.running_processes.values():
-            try:
-                process.terminate()
-            except:
-                pass
-        self.running_processes.clear()
+    def run_command_live(self, command: str, workdir: Path) -> tuple[str, str, int]:
+        """
+        Synchronous wrapper for run_command_async.
+        This method blocks until completion - use run_command_async when possible.
+        """
+        # Create a future to wait for completion
+        result_future = asyncio.Future()
+        
+        def callback(stdout: str, stderr: str, return_code: int):
+            result_future.set_result((stdout, stderr, return_code))
+        
+        # Schedule the async command
+        asyncio.create_task(self.run_command_async(command, workdir, callback))
+        
+        # Wait for completion (this will block the calling thread)
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(result_future)
 
 
 class TUIWrapper:
@@ -507,7 +455,7 @@ class TUIWrapper:
     def stop(self):
         """Stop the TUI application"""
         if self.tui_app and self.tui_running:
-            self.tui_app.stop_all_processes()
+            self.tui_app.command_runner.stop_all_processes()
             self.tui_app.exit()
             self.tui_running = False
     
@@ -540,7 +488,8 @@ class TUIWrapper:
     def run_command_async(self, command: str, workdir: Path, callback: Optional[Callable] = None):
         """Run a command asynchronously"""
         if self.tui_app:
-            self.tui_app.run_command_async(command, workdir, callback)
+            # Schedule the async command
+            asyncio.create_task(self.tui_app.run_command_async(command, workdir, callback))
         else:
             # Fallback to regular subprocess if TUI not available
             import subprocess

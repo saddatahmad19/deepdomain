@@ -102,3 +102,7 @@ Thumbs.db
 
 # Project specific
 docs/
+
+release.py
+
+dist/
