@@ -10,13 +10,13 @@ from rich import print as rprint
 from rich.text import Text
 import time
 
-from .filesystems import FileSystem
-from .output import Output
-from .execute import Execute
-from .recon import run_whoami, run_subdomains, run_harvest, run_shodan
-from .scanning import prepare_scanning_workspace, run_resolve, run_network_discover
-from .enumerate import prepare_enumeration_workspace, run_vulnerable
-from .tui import create_tui
+from src.classes.filesystems import FileSystem
+from src.classes.output import Output
+from src.classes.execute import Execute
+from src.process.recon import run_whoami, run_subdomains, run_harvest, run_shodan
+from src.process.scanning import prepare_scanning_workspace, run_resolve, run_network_discover
+from src.process.enumerate import prepare_enumeration_workspace, run_vulnerable
+from src.utils.tui import create_tui
 
 app = typer.Typer(help="DeepDomain — Advanced Security Reconnaissance Tool")
 console = Console()
@@ -91,61 +91,63 @@ def run(
         ))
         console.print(f"[bold cyan]Run:[/bold cyan] [bold white]sudo apt install {install_cmd}[/bold white]\n")
 
-    # Initialize TUI
-    tui = create_tui(domain, output)
+    # Define scanning callback
+    def scanning_callback(tui_app):
+        """Callback function to run scanning phases within TUI"""
+        try:
+            # initialize helpers with TUI integration
+            fs = FileSystem(output)
+            executor = Execute(workdir=output, tui=tui_app)
+            
+            # create record.md (with existence and title checks)
+            record_rel = "record.md"
+            record_full = (output / record_rel)
+            if not record_full.exists():
+                record_path = fs.createFile("record.md", location="")  # returns Path
+                record_out = Output()
+                record_out.addTitle("Record")
+                record_out.newLine()
+                record_out.write_to_file(record_path)
+            else:
+                # Only add title if first line does not already match
+                first_line = ""
+                try:
+                    with record_full.open("r", encoding="utf-8") as fh:
+                        first_line = fh.readline().rstrip("\n\r")
+                except Exception:
+                    first_line = ""
+                expected_title = "# Record"
+                if first_line != expected_title:
+                    # Do not overwrite existing files; skip adding title if different content exists
+                    pass
+
+            tui_app.add_status_message("Workspace initialized", "success")
+            tui_app.update_phase("Ready to begin", 20)
+
+            # Run the main phases with TUI integration
+            run_recon(domain, fs, executor, tui_app)
+            run_scanning(fs, executor, tui_app)
+            run_enumeration(fs, executor, tui_app)
+            
+            # Final success message
+            tui_app.update_phase("Complete", 100)
+            tui_app.add_status_message("DeepDomain scan complete!", "success")
+            tui_app.add_status_message(f"Results saved to: {output}", "info")
+            
+        except Exception as e:
+            tui_app.add_status_message(f"Scanning error: {str(e)}", "error")
+            raise
+
+    # Initialize TUI with scanning callback
+    tui = create_tui(domain, output, scanning_callback)
     tui.start()
-    
-    # Give TUI time to initialize
-    time.sleep(1)
     
     # Update TUI with initial status
     tui.update_phase("Initializing", 10)
     tui.add_status_message("DeepDomain scan starting...", "info")
-    
-    # initialize helpers with TUI integration
-    fs = FileSystem(output)
-    executor = Execute(workdir=output, tui=tui)
-    
-    # create record.md (with existence and title checks)
-    record_rel = "record.md"
-    record_full = (output / record_rel)
-    if not record_full.exists():
-        record_path = fs.createFile("record.md", location="")  # returns Path
-        record_out = Output()
-        record_out.addTitle("Record")
-        record_out.newLine()
-        record_out.write_to_file(record_path)
-    else:
-        # Only add title if first line does not already match
-        first_line = ""
-        try:
-            with record_full.open("r", encoding="utf-8") as fh:
-                first_line = fh.readline().rstrip("\n\r")
-        except Exception:
-            first_line = ""
-        expected_title = "# Record"
-        if first_line != expected_title:
-            # Do not overwrite existing files; skip adding title if different content exists
-            pass
 
-    tui.add_status_message("Workspace initialized", "success")
-    tui.update_phase("Ready to begin", 20)
-
-    # Run the main phases with TUI integration
-    run_recon(domain, fs, executor, tui)
-    run_scanning(fs, executor, tui)
-    run_enumeration(fs, executor, tui)
-    
-    # Final success message
-    tui.update_phase("Complete", 100)
-    tui.add_status_message("DeepDomain scan complete!", "success")
-    tui.add_status_message(f"Results saved to: {output}", "info")
-    
-    # Keep TUI running for a moment to show completion
-    time.sleep(3)
-    
-    # Stop TUI
-    tui.stop()
+    # Run the TUI in the main thread - this will block until TUI exits
+    tui.run_tui()
     
     # Also show final message in console
     console.print("\n" + "="*60, style="bold green")

@@ -1,5 +1,5 @@
 # main.py
-from src.cli import app
+from src.utils.cli import app
 
 if __name__ == "__main__":
     app()

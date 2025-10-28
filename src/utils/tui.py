@@ -182,7 +182,7 @@ class DeepDomainTUI(App):
         Binding("s", "toggle_status", "Toggle Status"),
     ]
     
-    def __init__(self, domain: str, output_dir: Path, *args, **kwargs):
+    def __init__(self, domain: str, output_dir: Path, scanning_callback=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.domain = domain
         self.output_dir = output_dir
@@ -190,6 +190,8 @@ class DeepDomainTUI(App):
         self.output_panel: Optional[LiveOutputPanel] = None
         self.running_processes = {}
         self.process_counter = 0
+        self.scanning_callback = scanning_callback
+        self.scanning_started = False
         
     def compose(self) -> ComposeResult:
         yield Header()
@@ -205,6 +207,19 @@ class DeepDomainTUI(App):
         self.status_panel.add_status_message(f"DeepDomain initialized for {self.domain}", "info")
         self.status_panel.add_status_message(f"Output directory: {self.output_dir}", "info")
         self.status_panel.update_phase("Ready", 0)
+        
+        # Start scanning after a brief delay
+        if self.scanning_callback and not self.scanning_started:
+            self.scanning_started = True
+            self.set_timer(1.0, self.start_scanning)
+    
+    def start_scanning(self):
+        """Start the scanning process"""
+        if self.scanning_callback:
+            try:
+                self.scanning_callback(self)
+            except Exception as e:
+                self.add_status_message(f"Scanning error: {str(e)}", "error")
     
     def action_quit(self) -> None:
         """Quit the application"""
@@ -342,30 +357,23 @@ class TUIWrapper:
     This allows the TUI to be used as a drop-in replacement for console output.
     """
     
-    def __init__(self, domain: str, output_dir: Path):
+    def __init__(self, domain: str, output_dir: Path, scanning_callback=None):
         self.domain = domain
         self.output_dir = output_dir
         self.tui_app: Optional[DeepDomainTUI] = None
         self.is_running = False
+        self.scanning_callback = scanning_callback
+        self._command_queue = []
+        self._status_queue = []
+        self._phase_queue = []
     
     def start(self):
-        """Start the TUI application"""
+        """Initialize the TUI application (but don't run it yet)"""
         if self.is_running:
             return
         
-        self.tui_app = DeepDomainTUI(self.domain, self.output_dir)
+        self.tui_app = DeepDomainTUI(self.domain, self.output_dir, self.scanning_callback)
         self.is_running = True
-        
-        # Run the TUI in a separate thread
-        def run_tui():
-            self.tui_app.run()
-        
-        self.tui_thread = threading.Thread(target=run_tui, daemon=True)
-        self.tui_thread.start()
-        
-        # Give the TUI time to initialize
-        import time
-        time.sleep(0.5)
     
     def stop(self):
         """Stop the TUI application"""
@@ -378,11 +386,17 @@ class TUIWrapper:
         """Update the current phase"""
         if self.tui_app:
             self.tui_app.update_phase(phase, progress)
+        else:
+            # Queue for later if TUI not ready
+            self._phase_queue.append((phase, progress))
     
     def add_status_message(self, message: str, msg_type: str = "info"):
         """Add a status message"""
         if self.tui_app:
             self.tui_app.add_status_message(message, msg_type)
+        else:
+            # Queue for later if TUI not ready
+            self._status_queue.append((message, msg_type))
     
     def run_command_live(self, command: str, workdir: Path) -> tuple[str, str, int]:
         """Run a command with live output"""
@@ -405,9 +419,26 @@ class TUIWrapper:
                 if callback:
                     callback(*result)
             threading.Thread(target=run_fallback, daemon=True).start()
+    
+    def run_tui(self):
+        """Run the TUI application in the main thread"""
+        if not self.tui_app:
+            self.start()
+        
+        # Process any queued updates
+        for phase, progress in self._phase_queue:
+            self.tui_app.update_phase(phase, progress)
+        self._phase_queue.clear()
+        
+        for message, msg_type in self._status_queue:
+            self.tui_app.add_status_message(message, msg_type)
+        self._status_queue.clear()
+        
+        # Run the TUI
+        self.tui_app.run()
 
 
-# Convenience function to create and start a TUI
-def create_tui(domain: str, output_dir: Path) -> TUIWrapper:
+# Convenience function to create a TUI
+def create_tui(domain: str, output_dir: Path, scanning_callback=None) -> TUIWrapper:
     """Create and return a TUI wrapper instance"""
-    return TUIWrapper(domain, output_dir)
+    return TUIWrapper(domain, output_dir, scanning_callback)

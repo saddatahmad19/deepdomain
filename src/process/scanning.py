@@ -1,9 +1,9 @@
 from pathlib import Path
 import subprocess
 
-from .filesystems import FileSystem
-from .output import Output
-from .execute import Execute
+from src.classes.filesystems import FileSystem
+from src.classes.output import Output
+from src.classes.execute import Execute
 
 
 def prepare_scanning_workspace(fs: FileSystem) -> None:
@@ -127,7 +127,7 @@ def run_network_discover(fs: FileSystem, executor: Execute) -> None:
     masscan_results_abs = Path(quick_exec.workdir) / "masscan_results.grep"
 
     # c) nmap ping sweep
-    nmap_ping_cmd = f"nmap -sn -T4 -iL {resolved_hosts_abs} -oN {Path(quick_exec.workdir)}/nmap_ping.txt"
+    nmap_ping_cmd = f"nmap -sS -Pn -T4 -F -oA {resolved_hosts_abs} -oN {Path(quick_exec.workdir)}/nmap_ping.txt"
     _append_command(fs, ["scanning/network_discover/quick/quick_discovery.md", "record.md"], nmap_ping_cmd)
     quick_exec.run_command(nmap_ping_cmd)
     nmap_ping_path = Path(quick_exec.workdir) / "nmap_ping.txt"

@@ -5,7 +5,7 @@ import re
 from typing import Tuple, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .tui import TUIWrapper
+    from src.utils.tui import TUIWrapper
 
 class Execute:
     def __init__(self, workdir: Path | str, tui: Optional['TUIWrapper'] = None):
