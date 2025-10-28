@@ -68,7 +68,7 @@ class LiveOutputPanel(Static):
         self.output_buffer = []
         self.max_lines = 1000
         self.current_command = ""
-        self.is_running = False
+        self.command_running = False
         
     def compose(self) -> ComposeResult:
         with Vertical():
@@ -79,14 +79,14 @@ class LiveOutputPanel(Static):
     def start_command(self, command: str):
         """Start tracking a new command"""
         self.current_command = command
-        self.is_running = True
+        self.command_running = True
         self.query_one("#current-command", Label).update(f"Running: {command}")
         self.query_one("#output-text", TextArea).text = ""
         self.output_buffer.clear()
     
     def add_output(self, text: str):
         """Add output text to the panel"""
-        if not self.is_running:
+        if not self.command_running:
             return
             
         # Add to buffer
@@ -103,7 +103,7 @@ class LiveOutputPanel(Static):
     
     def finish_command(self):
         """Mark the current command as finished"""
-        self.is_running = False
+        self.command_running = False
         self.query_one("#current-command", Label).update("Command completed")
     
     def clear_output(self):
@@ -361,7 +361,7 @@ class TUIWrapper:
         self.domain = domain
         self.output_dir = output_dir
         self.tui_app: Optional[DeepDomainTUI] = None
-        self.is_running = False
+        self.tui_running = False
         self.scanning_callback = scanning_callback
         self._command_queue = []
         self._status_queue = []
@@ -369,18 +369,18 @@ class TUIWrapper:
     
     def start(self):
         """Initialize the TUI application (but don't run it yet)"""
-        if self.is_running:
+        if self.tui_running:
             return
         
         self.tui_app = DeepDomainTUI(self.domain, self.output_dir, self.scanning_callback)
-        self.is_running = True
+        self.tui_running = True
     
     def stop(self):
         """Stop the TUI application"""
-        if self.tui_app and self.is_running:
+        if self.tui_app and self.tui_running:
             self.tui_app.stop_all_processes()
             self.tui_app.exit()
-            self.is_running = False
+            self.tui_running = False
     
     def update_phase(self, phase: str, progress: int = 0):
         """Update the current phase"""
