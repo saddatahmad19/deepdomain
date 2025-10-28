@@ -15,6 +15,7 @@ from textual.reactive import reactive
 from textual.timer import Timer
 from textual import events
 from textual.scroll_view import ScrollView
+from textual.worker import Worker, WorkerState
 from rich.text import Text
 
 
@@ -253,6 +254,30 @@ class DeepDomainTUI(App):
             self.scanning_started = True
             self.set_timer(1.0, self.start_scanning)
     
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle worker state changes for live command output"""
+        worker = event.worker
+        if worker.name.startswith("command_"):
+            if event.state == WorkerState.SUCCESS:
+                # Command completed successfully
+                stdout, stderr, return_code = worker.result
+                self.finish_command()
+                if return_code != 0:
+                    self.add_status_message(f"Command failed with return code {return_code}", "error")
+                else:
+                    self.add_status_message("Command completed successfully", "success")
+            elif event.state == WorkerState.ERROR:
+                # Command failed
+                self.finish_command()
+                self.add_status_message(f"Command error: {worker.error}", "error")
+    
+    def on_worker_progress(self, event: Worker.Progress) -> None:
+        """Handle worker progress updates for live output"""
+        worker = event.worker
+        if worker.name.startswith("command_") and event.value:
+            # This is live output from the command
+            self.add_command_output(event.value)
+    
     def start_scanning(self):
         """Start the scanning process"""
         if self.scanning_callback:
@@ -303,30 +328,14 @@ class DeepDomainTUI(App):
             focused.scroll_up(animate=False)
     
     def update_phase(self, phase: str, progress: int = 0):
-        """Update the current phase - thread-safe"""
+        """Update the current phase"""
         if self.status_panel:
-            try:
-                # Try to update directly first (if on main thread)
-                self.status_panel.update_phase(phase, progress)
-            except:
-                # If that fails, we're on a background thread - use call_from_thread
-                try:
-                    self.call_from_thread(self.status_panel.update_phase, phase, progress)
-                except:
-                    pass
+            self.status_panel.update_phase(phase, progress)
     
     def add_status_message(self, message: str, msg_type: str = "info"):
-        """Add a status message - thread-safe"""
+        """Add a status message"""
         if self.status_panel:
-            try:
-                # Try to update directly first (if on main thread)
-                self.status_panel.add_status_message(message, msg_type)
-            except:
-                # If that fails, we're on a background thread - use call_from_thread
-                try:
-                    self.call_from_thread(self.status_panel.add_status_message, message, msg_type)
-                except:
-                    pass
+            self.status_panel.add_status_message(message, msg_type)
     
     def start_command(self, command: str):
         """Start tracking a command"""
@@ -349,9 +358,6 @@ class DeepDomainTUI(App):
         Returns (stdout, stderr, returncode)
         This method should be called from a background thread.
         """
-        # Use call_from_thread to safely update UI from background thread
-        self.call_from_thread(self.start_command, command)
-        
         try:
             # Start the process
             process = subprocess.Popen(
@@ -380,15 +386,11 @@ class DeepDomainTUI(App):
                     break
                 if output:
                     stdout_lines.append(output.strip())
-                    # Use call_from_thread for thread-safe UI updates
-                    self.call_from_thread(self.add_command_output, output)
                 
                 # Also read stderr
                 error = process.stderr.readline()
                 if error:
                     stderr_lines.append(error.strip())
-                    # Use call_from_thread for thread-safe UI updates
-                    self.call_from_thread(self.add_command_output, error)
             
             # Wait for process to complete
             return_code = process.wait()
@@ -397,15 +399,9 @@ class DeepDomainTUI(App):
             if process_id in self.running_processes:
                 del self.running_processes[process_id]
             
-            # Use call_from_thread for thread-safe UI updates
-            self.call_from_thread(self.finish_command)
-            
             return '\n'.join(stdout_lines), '\n'.join(stderr_lines), return_code
             
         except Exception as e:
-            error_msg = f"Error running command: {str(e)}"
-            self.call_from_thread(self.add_command_output, error_msg)
-            self.call_from_thread(self.finish_command)
             return "", str(e), 1
     
     def run_command_async(self, command: str, workdir: Path, callback: Optional[Callable] = None) -> None:
@@ -413,17 +409,67 @@ class DeepDomainTUI(App):
         Run a command asynchronously with live output streaming.
         The callback will be called with (stdout, stderr, returncode) when complete.
         """
-        def run_in_thread():
+        def run_command_worker():
+            """Worker function that runs the command"""
             try:
-                result = self.run_command_live(command, workdir)
-                if callback:
-                    callback(*result)
+                # Start the process
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=workdir,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                # Store process reference
+                self.process_counter += 1
+                process_id = self.process_counter
+                self.running_processes[process_id] = process
+                
+                stdout_lines = []
+                stderr_lines = []
+                
+                # Read output line by line and yield progress
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        stdout_lines.append(output.strip())
+                        # Yield the output for live updates
+                        yield output
+                    
+                    # Also read stderr
+                    error = process.stderr.readline()
+                    if error:
+                        stderr_lines.append(error.strip())
+                        yield error
+                
+                # Wait for process to complete
+                return_code = process.wait()
+                
+                # Clean up
+                if process_id in self.running_processes:
+                    del self.running_processes[process_id]
+                
+                return '\n'.join(stdout_lines), '\n'.join(stderr_lines), return_code
+                
             except Exception as e:
-                if callback:
-                    callback("", str(e), 1)
+                return "", str(e), 1
         
-        thread = threading.Thread(target=run_in_thread, daemon=True)
-        thread.start()
+        # Start the command tracking
+        self.start_command(command)
+        
+        # Use Textual's run_worker for proper async execution
+        self.run_worker(
+            run_command_worker,
+            name=f"command_{self.process_counter}",
+            thread=True,
+            exclusive=False
+        )
     
     def stop_all_processes(self):
         """Stop all running processes"""
@@ -467,27 +513,17 @@ class TUIWrapper:
             self.tui_running = False
     
     def update_phase(self, phase: str, progress: int = 0):
-        """Update the current phase - thread-safe"""
-        if self.tui_app and self.tui_running:
-            try:
-                # Use the TUI app's thread-safe method
-                self.tui_app.update_phase(phase, progress)
-            except:
-                # Queue for later if update fails
-                self._phase_queue.append((phase, progress))
+        """Update the current phase"""
+        if self.tui_app:
+            self.tui_app.update_phase(phase, progress)
         else:
             # Queue for later if TUI not ready
             self._phase_queue.append((phase, progress))
     
     def add_status_message(self, message: str, msg_type: str = "info"):
-        """Add a status message - thread-safe"""
-        if self.tui_app and self.tui_running:
-            try:
-                # Use the TUI app's thread-safe method
-                self.tui_app.add_status_message(message, msg_type)
-            except:
-                # Queue for later if update fails
-                self._status_queue.append((message, msg_type))
+        """Add a status message"""
+        if self.tui_app:
+            self.tui_app.add_status_message(message, msg_type)
         else:
             # Queue for later if TUI not ready
             self._status_queue.append((message, msg_type))
@@ -507,11 +543,12 @@ class TUIWrapper:
         if self.tui_app:
             self.tui_app.run_command_async(command, workdir, callback)
         else:
-            # Fallback
+            # Fallback to regular subprocess if TUI not available
+            import subprocess
             def run_fallback():
-                result = self.run_command_live(command, workdir)
+                proc = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=workdir)
                 if callback:
-                    callback(*result)
+                    callback(proc.stdout, proc.stderr, proc.returncode)
             threading.Thread(target=run_fallback, daemon=True).start()
     
     def run_tui(self):
