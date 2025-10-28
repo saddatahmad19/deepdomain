@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Optional
 
-from .filesystems import FileSystem
-from .output import Output
-from .execute import Execute
+from src.classes.filesystems import FileSystem
+from src.classes.output import Output
+from src.classes.execute import Execute
 
 
 def _append_command(fs: FileSystem, files: list[str], command: str) -> None:
@@ -49,12 +49,12 @@ def run_harvest(domain: str, fs: FileSystem, executor: Execute, record_file: str
         out.addTitle("Harvest")
         out.newLine()
         out.write_to_file(harvest_md)
-    
+    free_engines = ['baidu','certspotter','chaos','commoncrawl','crtsh','duckduckgo','gitlab','hackertarget','hudsonrock','linkedin','linkedin_links','netcraft','omnisint','otx','qwant','rapiddns','robtex','subdomaincenter','subdomainfinderc99','sublist3r','threatcrowd','threatminer','waybackarchive','yahoo']
     # Child executor in ./recon/harvest
     child_exec = Execute(workdir=Path(executor.workdir) / "recon/harvest")
     
     # Run theHarvester
-    harvest_cmd = f"theHarvester -d {domain} -b all"
+    harvest_cmd = f"theHarvester -d {domain} -b {','.join(free_engines)}"
     _append_command(fs, [harvest_md_rel, record_file], harvest_cmd)
     stdout, stderr, _ = child_exec.run_command(harvest_cmd)
     
