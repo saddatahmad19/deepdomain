@@ -16,7 +16,7 @@ from .execute import Execute
 from .recon import run_whoami, run_subdomains, run_harvest, run_shodan
 from .scanning import prepare_scanning_workspace, run_resolve, run_network_discover
 
-app = typer.Typer(help="DeepDomain — modular recon & scanning scaffold")
+app = typer.Typer(help="DeepDomain — Advanced Security Reconnaissance Tool")
 console = Console()
 
 # Version information
@@ -51,19 +51,15 @@ def _print_info(message: str):
 
 
 @app.callback()
-def version_callback(
-    version: bool = typer.Option(False, "--version", "-v", help="Show version and exit")
-):
-    """Show version information and exit."""
-    if version:
-        console.print(f"DeepDomain version {__version__}")
-        raise typer.Exit()
-
-@app.command()
-def run(
+def main(
     domain: str = typer.Option(..., "-d", "--domain", help="Target domain (required)"),
     output: Path | None = typer.Option(None, "-o", "--output", help="Output directory (optional)")
 ):
+    """DeepDomain — Advanced Security Reconnaissance Tool
+    
+    A comprehensive cybersecurity reconnaissance and scanning tool designed for Kali Linux.
+    Performs domain reconnaissance, subdomain discovery, information harvesting, and network scanning.
+    """
     # Print startup banner
     console.print("\n" + "="*60, style="bold cyan")
     console.print(Panel.fit(
