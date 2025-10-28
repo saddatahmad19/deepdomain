@@ -5,112 +5,134 @@ import threading
 from pathlib import Path
 from typing import Optional, Callable, Any
 from datetime import datetime
+import time
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, TextArea, ProgressBar, Label
+from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual.widgets import Header, Footer, Static, TextArea, ProgressBar, Label, RichLog
 from textual.binding import Binding
 from textual.reactive import reactive
 from textual.timer import Timer
 from textual import events
+from textual.scroll_view import ScrollView
+from rich.text import Text
 
 
-class StatusPanel(Static):
+class StatusPanel(ScrollableContainer):
     """Left panel showing status updates and phase information"""
+    
+    can_focus = True
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.current_phase = "Initializing"
         self.phase_progress = 0
         self.total_phases = 3
-        self.status_messages = []
-        self.max_messages = 50
         
     def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Label("DeepDomain Status", id="status-title")
-            yield ProgressBar(total=100, show_eta=False, id="phase-progress")
-            yield Label("", id="current-phase")
-            yield Static("", id="status-messages")
+        yield Label("DeepDomain Status", id="status-title")
+        yield ProgressBar(total=100, show_eta=False, id="phase-progress")
+        yield Label("", id="current-phase")
+        yield RichLog(id="status-messages", wrap=True, highlight=True, markup=True)
     
     def update_phase(self, phase: str, progress: int = 0):
         """Update the current phase and progress"""
         self.current_phase = phase
         self.phase_progress = progress
-        self.query_one("#current-phase", Label).update(f"Phase: {phase}")
-        self.query_one("#phase-progress", ProgressBar).progress = progress
+        try:
+            self.query_one("#current-phase", Label).update(f"Phase: {phase}")
+            self.query_one("#phase-progress", ProgressBar).update(progress=progress)
+        except:
+            pass
     
     def add_status_message(self, message: str, msg_type: str = "info"):
         """Add a status message to the panel"""
         timestamp = datetime.now().strftime("%H:%M:%S")
-        icon = "✓" if msg_type == "success" else "ℹ" if msg_type == "info" else "⚠" if msg_type == "warning" else "✗"
-        formatted_msg = f"[{timestamp}] {icon} {message}"
         
-        self.status_messages.append(formatted_msg)
-        if len(self.status_messages) > self.max_messages:
-            self.status_messages.pop(0)
+        # Color-coded icons and messages
+        if msg_type == "success":
+            icon = "✓"
+            color = "green"
+        elif msg_type == "info":
+            icon = "ℹ"
+            color = "cyan"
+        elif msg_type == "warning":
+            icon = "⚠"
+            color = "yellow"
+        else:  # error
+            icon = "✗"
+            color = "red"
         
-        # Update the display
-        messages_text = "\n".join(self.status_messages[-20:])  # Show last 20 messages
-        self.query_one("#status-messages", Static).update(messages_text)
+        formatted_msg = f"[dim]{timestamp}[/dim] [{color}]{icon}[/{color}] {message}"
+        
+        try:
+            log = self.query_one("#status-messages", RichLog)
+            log.write(formatted_msg)
+        except:
+            pass
     
     def clear_messages(self):
         """Clear all status messages"""
-        self.status_messages.clear()
-        self.query_one("#status-messages", Static).update("")
+        try:
+            self.query_one("#status-messages", RichLog).clear()
+        except:
+            pass
 
 
-class LiveOutputPanel(Static):
+class LiveOutputPanel(ScrollableContainer):
     """Right panel showing live command output"""
+    
+    can_focus = True
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.output_buffer = []
-        self.max_lines = 1000
         self.current_command = ""
         self.command_running = False
         
     def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Label("Live Command Output", id="output-title")
-            yield Label("", id="current-command")
-            yield TextArea("", id="output-text", read_only=True, language="text")
+        yield Label("Live Command Output", id="output-title")
+        yield Label("", id="current-command")
+        yield RichLog(id="output-text", wrap=True, highlight=False, markup=False, max_lines=5000)
     
     def start_command(self, command: str):
         """Start tracking a new command"""
         self.current_command = command
         self.command_running = True
-        self.query_one("#current-command", Label).update(f"Running: {command}")
-        self.query_one("#output-text", TextArea).text = ""
-        self.output_buffer.clear()
+        try:
+            self.query_one("#current-command", Label).update(f"[yellow]Running:[/yellow] {command}")
+            self.query_one("#output-text", RichLog).clear()
+        except:
+            pass
     
     def add_output(self, text: str):
-        """Add output text to the panel"""
-        if not self.command_running:
+        """Add output text to the panel - this will be called from background threads"""
+        if not text or not text.strip():
             return
             
-        # Add to buffer
-        self.output_buffer.extend(text.split('\n'))
-        
-        # Keep only the last max_lines
-        if len(self.output_buffer) > self.max_lines:
-            self.output_buffer = self.output_buffer[-self.max_lines:]
-        
-        # Update the text area
-        output_text = '\n'.join(self.output_buffer)
-        self.query_one("#output-text", TextArea).text = output_text
-        self.query_one("#output-text", TextArea).scroll_end()
+        try:
+            log = self.query_one("#output-text", RichLog)
+            # Write each line separately for better streaming effect
+            for line in text.split('\n'):
+                if line.strip():
+                    log.write(line)
+        except:
+            pass
     
     def finish_command(self):
         """Mark the current command as finished"""
         self.command_running = False
-        self.query_one("#current-command", Label).update("Command completed")
+        try:
+            self.query_one("#current-command", Label).update("[green]Command completed[/green]")
+        except:
+            pass
     
     def clear_output(self):
         """Clear all output"""
-        self.output_buffer.clear()
-        self.query_one("#output-text", TextArea).text = ""
-        self.query_one("#current-command", Label).update("No command running")
+        try:
+            self.query_one("#output-text", RichLog).clear()
+            self.query_one("#current-command", Label).update("No command running")
+        except:
+            pass
 
 
 class DeepDomainTUI(App):
@@ -129,11 +151,21 @@ class DeepDomainTUI(App):
         padding: 1;
     }
     
+    #status-panel:focus {
+        border: solid $accent;
+        border-title-color: $accent;
+    }
+    
     #output-panel {
         width: 2fr;
         border: solid $primary;
         margin: 1;
         padding: 1;
+    }
+    
+    #output-panel:focus {
+        border: solid $accent;
+        border-title-color: $accent;
     }
     
     #status-title {
@@ -149,7 +181,6 @@ class DeepDomainTUI(App):
     }
     
     #current-command {
-        color: $warning;
         margin-bottom: 1;
     }
     
@@ -159,19 +190,24 @@ class DeepDomainTUI(App):
     }
     
     #status-messages {
-        height: 20;
+        height: 1fr;
         border: solid $secondary;
         padding: 1;
         margin-top: 1;
     }
     
     #output-text {
-        height: 30;
+        height: 1fr;
         border: solid $secondary;
+        padding: 1;
     }
     
     #phase-progress {
         margin: 1 0;
+    }
+    
+    RichLog {
+        scrollbar-gutter: stable;
     }
     """
     
@@ -180,6 +216,10 @@ class DeepDomainTUI(App):
         Binding("c", "clear_output", "Clear Output"),
         Binding("r", "clear_status", "Clear Status"),
         Binding("s", "toggle_status", "Toggle Status"),
+        Binding("ctrl+1", "focus_status", "Focus Status"),
+        Binding("ctrl+2", "focus_output", "Focus Output"),
+        Binding("j", "scroll_down", "Scroll Down"),
+        Binding("k", "scroll_up", "Scroll Up"),
     ]
     
     def __init__(self, domain: str, output_dir: Path, scanning_callback=None, *args, **kwargs):
@@ -240,15 +280,53 @@ class DeepDomainTUI(App):
         if self.status_panel:
             self.status_panel.display = not self.status_panel.display
     
-    def update_phase(self, phase: str, progress: int = 0):
-        """Update the current phase"""
+    def action_focus_status(self) -> None:
+        """Focus the status panel"""
         if self.status_panel:
-            self.status_panel.update_phase(phase, progress)
+            self.status_panel.focus()
+    
+    def action_focus_output(self) -> None:
+        """Focus the output panel"""
+        if self.output_panel:
+            self.output_panel.focus()
+    
+    def action_scroll_down(self) -> None:
+        """Scroll down in the focused panel"""
+        focused = self.focused
+        if isinstance(focused, (StatusPanel, LiveOutputPanel)):
+            focused.scroll_down(animate=False)
+    
+    def action_scroll_up(self) -> None:
+        """Scroll up in the focused panel"""
+        focused = self.focused
+        if isinstance(focused, (StatusPanel, LiveOutputPanel)):
+            focused.scroll_up(animate=False)
+    
+    def update_phase(self, phase: str, progress: int = 0):
+        """Update the current phase - thread-safe"""
+        if self.status_panel:
+            try:
+                # Try to update directly first (if on main thread)
+                self.status_panel.update_phase(phase, progress)
+            except:
+                # If that fails, we're on a background thread - use call_from_thread
+                try:
+                    self.call_from_thread(self.status_panel.update_phase, phase, progress)
+                except:
+                    pass
     
     def add_status_message(self, message: str, msg_type: str = "info"):
-        """Add a status message"""
+        """Add a status message - thread-safe"""
         if self.status_panel:
-            self.status_panel.add_status_message(message, msg_type)
+            try:
+                # Try to update directly first (if on main thread)
+                self.status_panel.add_status_message(message, msg_type)
+            except:
+                # If that fails, we're on a background thread - use call_from_thread
+                try:
+                    self.call_from_thread(self.status_panel.add_status_message, message, msg_type)
+                except:
+                    pass
     
     def start_command(self, command: str):
         """Start tracking a command"""
@@ -269,8 +347,10 @@ class DeepDomainTUI(App):
         """
         Run a command with live output streaming to the TUI.
         Returns (stdout, stderr, returncode)
+        This method should be called from a background thread.
         """
-        self.start_command(command)
+        # Use call_from_thread to safely update UI from background thread
+        self.call_from_thread(self.start_command, command)
         
         try:
             # Start the process
@@ -300,13 +380,15 @@ class DeepDomainTUI(App):
                     break
                 if output:
                     stdout_lines.append(output.strip())
-                    self.add_command_output(output)
+                    # Use call_from_thread for thread-safe UI updates
+                    self.call_from_thread(self.add_command_output, output)
                 
                 # Also read stderr
                 error = process.stderr.readline()
                 if error:
                     stderr_lines.append(error.strip())
-                    self.add_command_output(error)
+                    # Use call_from_thread for thread-safe UI updates
+                    self.call_from_thread(self.add_command_output, error)
             
             # Wait for process to complete
             return_code = process.wait()
@@ -315,13 +397,15 @@ class DeepDomainTUI(App):
             if process_id in self.running_processes:
                 del self.running_processes[process_id]
             
-            self.finish_command()
+            # Use call_from_thread for thread-safe UI updates
+            self.call_from_thread(self.finish_command)
             
             return '\n'.join(stdout_lines), '\n'.join(stderr_lines), return_code
             
         except Exception as e:
-            self.add_command_output(f"Error running command: {str(e)}")
-            self.finish_command()
+            error_msg = f"Error running command: {str(e)}"
+            self.call_from_thread(self.add_command_output, error_msg)
+            self.call_from_thread(self.finish_command)
             return "", str(e), 1
     
     def run_command_async(self, command: str, workdir: Path, callback: Optional[Callable] = None) -> None:
@@ -383,17 +467,27 @@ class TUIWrapper:
             self.tui_running = False
     
     def update_phase(self, phase: str, progress: int = 0):
-        """Update the current phase"""
-        if self.tui_app:
-            self.tui_app.update_phase(phase, progress)
+        """Update the current phase - thread-safe"""
+        if self.tui_app and self.tui_running:
+            try:
+                # Use the TUI app's thread-safe method
+                self.tui_app.update_phase(phase, progress)
+            except:
+                # Queue for later if update fails
+                self._phase_queue.append((phase, progress))
         else:
             # Queue for later if TUI not ready
             self._phase_queue.append((phase, progress))
     
     def add_status_message(self, message: str, msg_type: str = "info"):
-        """Add a status message"""
-        if self.tui_app:
-            self.tui_app.add_status_message(message, msg_type)
+        """Add a status message - thread-safe"""
+        if self.tui_app and self.tui_running:
+            try:
+                # Use the TUI app's thread-safe method
+                self.tui_app.add_status_message(message, msg_type)
+            except:
+                # Queue for later if update fails
+                self._status_queue.append((message, msg_type))
         else:
             # Queue for later if TUI not ready
             self._status_queue.append((message, msg_type))
