@@ -8,7 +8,7 @@ from .filesystems import FileSystem
 from .output import Output
 from .execute import Execute
 from .recon import run_whoami, run_subdomains
-from .scanning import prepare_scanning_workspace
+from .scanning import prepare_scanning_workspace, run_resolve, run_network_discover
 
 app = typer.Typer(help="DeepDomain — modular recon & scanning scaffold")
 
@@ -52,23 +52,46 @@ def run(
     # initialize helpers
     fs = FileSystem(output)
     executor = Execute(workdir=output)
-    # create record.md
-    record_path = fs.createFile("record.md", location="")  # returns Path
-    record_out = Output()
-    record_out.addTitle("Record")
-    record_out.newLine()
-    record_out.write_to_file(record_path)
+    # create record.md (with existence and title checks)
+    record_rel = "record.md"
+    record_full = (output / record_rel)
+    if not record_full.exists():
+        record_path = fs.createFile("record.md", location="")  # returns Path
+        record_out = Output()
+        record_out.addTitle("Record")
+        record_out.newLine()
+        record_out.write_to_file(record_path)
+    else:
+        # Only add title if first line does not already match
+        first_line = ""
+        try:
+            with record_full.open("r", encoding="utf-8") as fh:
+                first_line = fh.readline().rstrip("\n\r")
+        except Exception:
+            first_line = ""
+        expected_title = "# Record"
+        if first_line != expected_title:
+            # Do not overwrite existing files; skip adding title if different content exists
+            pass
 
     # Example: run whoami set (execution set 1)
     typer.secho("Running whoami execution set...", fg=typer.colors.GREEN)
     run_whoami(domain, fs, executor)
 
-    # Example: run subdomains set (execution set 2) — skeleton
+    # Example: run subdomains set (execution set 2)
     typer.secho("Preparing subdomains execution set...", fg=typer.colors.GREEN)
     run_subdomains(domain, fs, executor)
 
     # Prepare scanning workspace (README step 7)
     typer.secho("Preparing scanning workspace...", fg=typer.colors.GREEN)
     prepare_scanning_workspace(fs)
+
+    # Run resolve (execution set 5 and 9)
+    typer.secho("Running resolve steps...", fg=typer.colors.GREEN)
+    run_resolve(fs, executor)
+
+    # Run network discovery (execution set 6)
+    typer.secho("Running network discovery steps...", fg=typer.colors.GREEN)
+    run_network_discover(fs, executor)
 
     typer.secho("Done (scaffold complete). Expand each execution set in src/execute.py", fg=typer.colors.BLUE)
