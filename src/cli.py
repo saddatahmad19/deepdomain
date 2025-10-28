@@ -15,12 +15,13 @@ from .output import Output
 from .execute import Execute
 from .recon import run_whoami, run_subdomains, run_harvest, run_shodan
 from .scanning import prepare_scanning_workspace, run_resolve, run_network_discover
+from .enumerate import prepare_enumeration_workspace, run_vulnerable
 
 app = typer.Typer(help="DeepDomain — Advanced Security Reconnaissance Tool")
 console = Console()
 
 # Version information
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # Tools used across the flow (modify per your final toolset)
 DEFAULT_TOOLS = [
@@ -50,8 +51,8 @@ def _print_info(message: str):
     console.print(f"ℹ {message}", style="dim")
 
 
-@app.callback()
-def main(
+@app.command()
+def run(
     domain: str = typer.Option(..., "-d", "--domain", help="Target domain (required)"),
     output: Path | None = typer.Option(None, "-o", "--output", help="Output directory (optional)")
 ):
@@ -120,6 +121,7 @@ def main(
     # Run the main phases
     run_recon(domain, fs, executor)
     run_scanning(fs, executor)
+    run_enumeration(fs, executor)
     
     # Final success message
     console.print("\n" + "="*60, style="bold green")
@@ -185,3 +187,22 @@ def run_scanning(fs: FileSystem, executor: Execute):
     _print_success("Network discovery complete")
     
     console.print("\n[bold]✓[/bold] [green]Scanning phase complete[/green]\n", justify="center")
+
+
+def run_enumeration(fs: FileSystem, executor: Execute):
+    """Run all enumeration phase execution sets."""
+    _print_section_header("ENUMERATION PHASE", "🔬")
+    
+    # Prepare enumeration workspace
+    with console.status("[bold yellow]Preparing enumeration workspace...", spinner="dots"):
+        time.sleep(0.3)
+        prepare_enumeration_workspace(fs)
+    _print_info("Enumeration workspace initialized")
+    
+    # Run vulnerable enumeration (execution sets 13-15)
+    with console.status("[bold yellow]Running vulnerability enumeration...", spinner="dots2"):
+        time.sleep(0.5)
+        run_vulnerable(fs, executor)
+    _print_success("Vulnerability enumeration complete")
+    
+    console.print("\n[bold]✓[/bold] [green]Enumeration phase complete[/green]\n", justify="center")
