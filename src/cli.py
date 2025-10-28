@@ -16,12 +16,10 @@ from .execute import Execute
 from .recon import run_whoami, run_subdomains, run_harvest, run_shodan
 from .scanning import prepare_scanning_workspace, run_resolve, run_network_discover
 from .enumerate import prepare_enumeration_workspace, run_vulnerable
+from .tui import create_tui
 
 app = typer.Typer(help="DeepDomain — Advanced Security Reconnaissance Tool")
 console = Console()
-
-# Version information
-__version__ = "1.0.1"
 
 # Tools used across the flow (modify per your final toolset)
 DEFAULT_TOOLS = [
@@ -38,7 +36,7 @@ def _check_tools(tools: List[str]) -> Tuple[List[str], str]:
 
 def _print_section_header(title: str, emoji: str = "🔍"):
     """Print a formatted section header"""
-    console.print(f"\n{emoji} {title}", style="bold cyan", justify="center")
+    console.print(f"\n{emoji} {title}", style="bold cyan", justify="left")
 
 
 def _print_success(message: str):
@@ -93,9 +91,21 @@ def run(
         ))
         console.print(f"[bold cyan]Run:[/bold cyan] [bold white]sudo apt install {install_cmd}[/bold white]\n")
 
-    # initialize helpers
+    # Initialize TUI
+    tui = create_tui(domain, output)
+    tui.start()
+    
+    # Give TUI time to initialize
+    time.sleep(1)
+    
+    # Update TUI with initial status
+    tui.update_phase("Initializing", 10)
+    tui.add_status_message("DeepDomain scan starting...", "info")
+    
+    # initialize helpers with TUI integration
     fs = FileSystem(output)
-    executor = Execute(workdir=output)
+    executor = Execute(workdir=output, tui=tui)
+    
     # create record.md (with existence and title checks)
     record_rel = "record.md"
     record_full = (output / record_rel)
@@ -118,12 +128,26 @@ def run(
             # Do not overwrite existing files; skip adding title if different content exists
             pass
 
-    # Run the main phases
-    run_recon(domain, fs, executor)
-    run_scanning(fs, executor)
-    run_enumeration(fs, executor)
+    tui.add_status_message("Workspace initialized", "success")
+    tui.update_phase("Ready to begin", 20)
+
+    # Run the main phases with TUI integration
+    run_recon(domain, fs, executor, tui)
+    run_scanning(fs, executor, tui)
+    run_enumeration(fs, executor, tui)
     
     # Final success message
+    tui.update_phase("Complete", 100)
+    tui.add_status_message("DeepDomain scan complete!", "success")
+    tui.add_status_message(f"Results saved to: {output}", "info")
+    
+    # Keep TUI running for a moment to show completion
+    time.sleep(3)
+    
+    # Stop TUI
+    tui.stop()
+    
+    # Also show final message in console
     console.print("\n" + "="*60, style="bold green")
     console.print(Panel.fit(
         "[bold green]✓ DeepDomain scan complete![/bold green]\n"
@@ -133,76 +157,70 @@ def run(
     console.print("="*60 + "\n", style="bold green")
 
 
-def run_recon(domain: str, fs: FileSystem, executor: Execute):
+def run_recon(domain: str, fs: FileSystem, executor: Execute, tui=None):
     """Run all reconnaissance phase execution sets."""
-    _print_section_header("RECONNAISSANCE PHASE", "🔎")
+    tui.update_phase("Reconnaissance Phase", 30)
+    tui.add_status_message("Starting reconnaissance phase...", "info")
     
     # Execution set 1: WhoAmI
-    with console.status("[bold yellow]Running whoami execution set...", spinner="dots"):
-        time.sleep(0.5)  # Brief pause for visual effect
-        run_whoami(domain, fs, executor)
-    _print_success("WhoAmI investigation complete")
+    tui.add_status_message("Running whoami execution set...", "info")
+    run_whoami(domain, fs, executor)
+    tui.add_status_message("WhoAmI investigation complete", "success")
     
     # Execution set 2: Subdomains
-    with console.status("[bold yellow]Discovering subdomains...", spinner="dots2"):
-        time.sleep(0.5)
-        run_subdomains(domain, fs, executor)
-    _print_success("Subdomain discovery complete")
+    tui.add_status_message("Discovering subdomains...", "info")
+    run_subdomains(domain, fs, executor)
+    tui.add_status_message("Subdomain discovery complete", "success")
     
     # Execution set 3: Harvest
-    with console.status("[bold yellow]Harvesting information...", spinner="earth"):
-        time.sleep(0.5)
-        run_harvest(domain, fs, executor)
-    _print_success("Information harvesting complete")
+    tui.add_status_message("Harvesting information...", "info")
+    run_harvest(domain, fs, executor)
+    tui.add_status_message("Information harvesting complete", "success")
     
     # Execution set 4: Shodan
-    with console.status("[bold yellow]Querying Shodan...", spinner="bouncingBall"):
-        time.sleep(0.5)
-        run_shodan(domain, fs, executor)
-    _print_success("Shodan reconnaissance complete")
+    tui.add_status_message("Querying Shodan...", "info")
+    run_shodan(domain, fs, executor)
+    tui.add_status_message("Shodan reconnaissance complete", "success")
     
-    console.print("\n[bold]✓[/bold] [green]Reconnaissance phase complete[/green]\n", justify="center")
+    tui.add_status_message("Reconnaissance phase complete", "success")
 
 
-def run_scanning(fs: FileSystem, executor: Execute):
+def run_scanning(fs: FileSystem, executor: Execute, tui=None):
     """Run all scanning phase execution sets."""
-    _print_section_header("SCANNING PHASE", "📡")
+    tui.update_phase("Scanning Phase", 60)
+    tui.add_status_message("Starting scanning phase...", "info")
     
     # Prepare scanning workspace
-    with console.status("[bold yellow]Preparing scanning workspace...", spinner="dots"):
-        time.sleep(0.3)
-        prepare_scanning_workspace(fs)
-    _print_info("Scanning workspace initialized")
+    tui.add_status_message("Preparing scanning workspace...", "info")
+    prepare_scanning_workspace(fs)
+    tui.add_status_message("Scanning workspace initialized", "success")
     
     # Execution set 5 & 9: Resolve
-    with console.status("[bold yellow]Resolving hosts and live endpoints...", spinner="clock"):
-        time.sleep(0.5)
-        run_resolve(fs, executor)
-    _print_success("Host resolution complete")
+    tui.add_status_message("Resolving hosts and live endpoints...", "info")
+    run_resolve(fs, executor)
+    tui.add_status_message("Host resolution complete", "success")
     
     # Execution set 6: Network discovery
-    with console.status("[bold yellow]Performing network discovery...", spinner="point"):
-        time.sleep(0.5)
-        run_network_discover(fs, executor)
-    _print_success("Network discovery complete")
+    tui.add_status_message("Performing network discovery...", "info")
+    run_network_discover(fs, executor)
+    tui.add_status_message("Network discovery complete", "success")
     
-    console.print("\n[bold]✓[/bold] [green]Scanning phase complete[/green]\n", justify="center")
+    tui.add_status_message("Scanning phase complete", "success")
 
 
-def run_enumeration(fs: FileSystem, executor: Execute):
+def run_enumeration(fs: FileSystem, executor: Execute, tui=None):
     """Run all enumeration phase execution sets."""
-    _print_section_header("ENUMERATION PHASE", "🔬")
+    tui.update_phase("Enumeration Phase", 80)
+    tui.add_status_message("Starting enumeration phase...", "info")
     
     # Prepare enumeration workspace
-    with console.status("[bold yellow]Preparing enumeration workspace...", spinner="dots"):
-        time.sleep(0.3)
-        prepare_enumeration_workspace(fs)
-    _print_info("Enumeration workspace initialized")
+    tui.add_status_message("Preparing enumeration workspace...", "info")
+    prepare_enumeration_workspace(fs)
+    tui.add_status_message("Enumeration workspace initialized", "success")
     
     # Run vulnerable enumeration (execution sets 13-15)
-    with console.status("[bold yellow]Running vulnerability enumeration...", spinner="dots2"):
-        time.sleep(0.5)
-        run_vulnerable(fs, executor)
-    _print_success("Vulnerability enumeration complete")
+    tui.add_status_message("Running vulnerability enumeration...", "info")
+    run_vulnerable(fs, executor)
+    tui.add_status_message("Vulnerability enumeration complete", "success")
     
-    console.print("\n[bold]✓[/bold] [green]Enumeration phase complete[/green]\n", justify="center")
+    tui.add_status_message("Enumeration phase complete", "success")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deepdomain"
-version = "1.0.1"
+version = "1.0.2"
 description = "A comprehensive cybersecurity reconnaissance and scanning tool for Kali Linux"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -43,6 +43,7 @@ classifiers = [
 dependencies = [
     "typer[all]>=0.9.0",
     "rich>=13.0.0",
+    "textual>=0.44.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
     "httpx>=0.24.0",
