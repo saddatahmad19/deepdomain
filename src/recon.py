@@ -21,6 +21,88 @@ def _append_output(fs: FileSystem, file: str, text: str) -> None:
     fs.appendOutput(file, out)
 
 
+def run_harvest(domain: str, fs: FileSystem, executor: Execute, record_file: str = "record.md") -> None:
+    """Execution set 3: recon/harvest with theHarvester."""
+    recon_dir = fs.base.joinpath("recon")
+    if not recon_dir.exists():
+        fs.createFolder("recon")
+    harvest_dir = recon_dir.joinpath("harvest")
+    if not harvest_dir.exists():
+        fs.createFolder("harvest", location="recon")
+    
+    harvest_md_rel = "recon/harvest/harvest.md"
+    harvest_md_full = fs.base.joinpath(harvest_md_rel)
+    if not harvest_md_full.exists():
+        harvest_md = fs.createFile("harvest.md", location="recon/harvest")
+    else:
+        harvest_md = harvest_md_full
+    
+    expected_title = "# Harvest"
+    first_line = ""
+    try:
+        with harvest_md.open("r", encoding="utf-8") as fh:
+            first_line = fh.readline().rstrip("\n\r")
+    except Exception:
+        first_line = ""
+    if first_line != expected_title:
+        out = Output()
+        out.addTitle("Harvest")
+        out.newLine()
+        out.write_to_file(harvest_md)
+    
+    # Child executor in ./recon/harvest
+    child_exec = Execute(workdir=Path(executor.workdir) / "recon/harvest")
+    
+    # Run theHarvester
+    harvest_cmd = f"theHarvester -d {domain} -b all"
+    _append_command(fs, [harvest_md_rel, record_file], harvest_cmd)
+    stdout, stderr, _ = child_exec.run_command(harvest_cmd)
+    
+    # Store output
+    _append_output(fs, harvest_md_rel, stdout or stderr or "")
+
+
+def run_shodan(domain: str, fs: FileSystem, executor: Execute, record_file: str = "record.md") -> None:
+    """Execution set 4: recon/shodan with shodan search."""
+    recon_dir = fs.base.joinpath("recon")
+    if not recon_dir.exists():
+        fs.createFolder("recon")
+    shodan_dir = recon_dir.joinpath("shodan")
+    if not shodan_dir.exists():
+        fs.createFolder("shodan", location="recon")
+    
+    shodan_md_rel = "recon/shodan/shodan.md"
+    shodan_md_full = fs.base.joinpath(shodan_md_rel)
+    if not shodan_md_full.exists():
+        shodan_md = fs.createFile("shodan.md", location="recon/shodan")
+    else:
+        shodan_md = shodan_md_full
+    
+    expected_title = "# Shodan"
+    first_line = ""
+    try:
+        with shodan_md.open("r", encoding="utf-8") as fh:
+            first_line = fh.readline().rstrip("\n\r")
+    except Exception:
+        first_line = ""
+    if first_line != expected_title:
+        out = Output()
+        out.addTitle("Shodan")
+        out.newLine()
+        out.write_to_file(shodan_md)
+    
+    # Child executor in ./recon/shodan
+    child_exec = Execute(workdir=Path(executor.workdir) / "recon/shodan")
+    
+    # Run shodan search
+    shodan_cmd = f"shodan search hostname:{domain} --fields ip_str,port,org,data --limit 100"
+    _append_command(fs, [shodan_md_rel, record_file], shodan_cmd)
+    stdout, stderr, _ = child_exec.run_command(shodan_cmd)
+    
+    # Store output
+    _append_output(fs, shodan_md_rel, stdout or stderr or "")
+
+
 def run_whoami(domain: str, fs: FileSystem, executor: Execute, record_file: str = "record.md") -> None:
     """Execution set 1: recon/whoami.md with host/whois steps and outputs."""
     # Ensure folder exists (check first)
@@ -143,4 +225,18 @@ def run_subdomains(domain: str, fs: FileSystem, executor: Execute, record_file: 
 
     # k) store grep output
     _append_output(fs, sub_md_rel, stdout_grep or stderr_grep or "")
+
+    # 5) HTTPX execution (README step 5)
+    #    Use all_subdomains.txt to find live subdomains and append results
+    httpx_out_rel = Path(child_exec.workdir) / "live_subdomains.txt"
+    httpx_cmd = (
+        f"httpx -l all_subdomains.txt -title -status-code -tech-detect -follow-redirects "
+        f"-mc 200,301,302 -o {httpx_out_rel}"
+    )
+    _append_command(fs, [sub_md_rel, record_file], httpx_cmd)
+    child_exec.run_command(httpx_cmd)
+    if httpx_out_rel.exists():
+        _append_output(fs, sub_md_rel, httpx_out_rel.read_text())
+    else:
+        _append_output(fs, sub_md_rel, "")
 

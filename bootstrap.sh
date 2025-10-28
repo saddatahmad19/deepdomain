@@ -19,6 +19,10 @@ APT_PACKAGES=(
   libmagic1
   nmap
   nikto
+  gobuster
+  nuclei
+  masscan
+  dnsutils
 )
 
 PRINT_NOTICE() {
@@ -50,9 +54,14 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 # Create venv if missing
-if [ -d "${VENV_DIR}" ]; then
-  PRINT_NOTICE "Virtual environment '${VENV_DIR}' already exists — skipping creation."
+if [ -d "${VENV_DIR}" ] && [ -f "${VENV_DIR}/pyvenv.cfg" ]; then
+  PRINT_NOTICE "Virtual environment '${VENV_DIR}' already exists and appears valid — skipping creation."
+  PRINT_NOTICE "If you need to recreate it, remove the directory first: rm -rf ${VENV_DIR}"
 else
+  if [ -d "${VENV_DIR}" ]; then
+    PRINT_NOTICE "Removing incomplete virtual environment directory..."
+    rm -rf "${VENV_DIR}"
+  fi
   PRINT_NOTICE "Creating virtual environment at ./${VENV_DIR}..."
   python3 -m venv "${VENV_DIR}"
 fi
@@ -94,6 +103,36 @@ fi
 PRINT_NOTICE "Installing Python packages from ${REQ_FILE}..."
 python -m pip install -r "${REQ_FILE}"
 
+# Install Go-based tools (subfinder, dnsx, httpx, theHarvester)
+PRINT_NOTICE "Installing Go-based reconnaissance tools..."
+
+# Check if Go is installed, install if not
+if ! command -v go >/dev/null 2>&1; then
+  PRINT_NOTICE "Installing Go..."
+  GO_VERSION="1.21.5"
+  wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+  sudo tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
+  rm "go${GO_VERSION}.linux-amd64.tar.gz"
+  echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile
+  export PATH=$PATH:/usr/local/go/bin
+fi
+
+# Install Go tools
+PRINT_NOTICE "Installing subfinder, dnsx, httpx, theHarvester..."
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install -v github.com/laramies/theHarvester@latest
+
+# Add Go bin to PATH for this session
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# Install shodan CLI if not present
+if ! command -v shodan >/dev/null 2>&1; then
+  PRINT_NOTICE "Installing shodan CLI..."
+  python -m pip install shodan
+fi
+
 # Final messages
 deactivate 2>/dev/null || true
 
@@ -109,12 +148,10 @@ Next steps:
        python main.py -d example.com -o /path/to/output
 
 Notes:
-  - This script installs a set of apt packages useful for recon development
-    (nmap, nikto, jq, whois, libmagic, etc.). Many recon tools (subfinder, dnsx, httpx, etc.)
-    are Go binaries or separate installers and are NOT installed by this script.
-  - If you want, I can extend this script to:
-      * install Go and use `go install` to fetch subfinder/dnsx/httpx,
-      * install shodan-cli via pip or other OS-specific installers,
-      * or add an interactive prompt for which extra recon tools to install.
+  - This script installs apt packages (nmap, nikto, gobuster, nuclei, masscan, etc.)
+    and Go-based tools (subfinder, dnsx, httpx, theHarvester) via go install.
+  - The shodan CLI is installed via pip.
+  - All tools should now be available for the DeepDomain reconnaissance workflow.
+  - If you encounter issues with Go tools, ensure your PATH includes $(go env GOPATH)/bin
 
 EOF
