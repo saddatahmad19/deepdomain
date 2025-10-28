@@ -222,12 +222,16 @@ class TUIUpdateManager:
                 # Process the update
                 await self._apply_update(update_type, data)
                 
+                # Mark task as done
+                self.update_queue.task_done()
+                
             except asyncio.TimeoutError:
                 # No updates, continue
                 continue
             except Exception as e:
                 # Log error but continue
                 print(f"Update processing error: {e}")
+                continue
     
     async def _apply_update(self, update_type: str, data: Any):
         """Apply a specific update type"""

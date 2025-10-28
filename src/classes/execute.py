@@ -2,13 +2,13 @@
 from pathlib import Path
 import subprocess
 import re
-from typing import Tuple, Optional, TYPE_CHECKING
+from typing import Tuple, Optional, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
-    from src.utils.tui import TUIWrapper
+    from src.utils.tui import TUIWrapper, ThreadSafeTUIWrapper
 
 class Execute:
-    def __init__(self, workdir: Path | str, tui: Optional['TUIWrapper'] = None):
+    def __init__(self, workdir: Path | str, tui: Optional[Union['TUIWrapper', 'ThreadSafeTUIWrapper']] = None):
         self.workdir = Path(workdir)
         self.tui = tui
 

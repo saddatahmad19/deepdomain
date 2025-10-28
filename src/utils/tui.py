@@ -59,10 +59,11 @@ class StatusPanel(ScrollableContainer):
         """React to status message changes"""
         try:
             log = self.query_one("#status-messages", RichLog)
-            # Only add new messages to avoid duplicates
-            if messages and len(messages) > len(log.lines):
-                new_message = messages[-1]
-                log.write(new_message)
+            # Clear and rewrite all messages to ensure consistency
+            if messages:
+                log.clear()
+                for message in messages:
+                    log.write(message)
         except Exception:
             pass
     
@@ -274,10 +275,25 @@ class DeepDomainTUI(App):
         self.status_panel.add_status_message(f"Output directory: {self.output_dir}", "info")
         self.status_panel.update_phase("Ready", 0)
         
+        # Set up periodic refresh to ensure updates are visible
+        self.set_interval(0.5, self.refresh_display)
+        
         # Start scanning after a brief delay
         if self.scanning_callback and not self.scanning_started:
             self.scanning_started = True
             self.set_timer(1.0, self.start_scanning)
+    
+    def refresh_display(self):
+        """Periodically refresh the display to ensure updates are visible"""
+        try:
+            # Force refresh of reactive properties
+            if self.status_panel:
+                # Trigger reactive property updates
+                self.status_panel.current_phase = self.status_panel.current_phase
+                self.status_panel.phase_progress = self.status_panel.phase_progress
+                self.status_panel.status_messages = self.status_panel.status_messages
+        except Exception:
+            pass
     
     async def on_unmount(self) -> None:
         """Clean up when TUI is unmounted"""
@@ -293,11 +309,14 @@ class DeepDomainTUI(App):
     async def _run_scanning_async(self):
         """Run scanning callback asynchronously"""
         try:
+            # Create a thread-safe wrapper for the scanning callback
+            thread_safe_tui = ThreadSafeTUIWrapper(self)
+            
             # Run the scanning callback in a thread to avoid blocking
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self.scanning_callback, self)
+            await loop.run_in_executor(None, self.scanning_callback, thread_safe_tui)
         except Exception as e:
-            self.add_status_message(f"Scanning error: {str(e)}", "error")
+            await self.update_manager.queue_update("status_message", (f"Scanning error: {str(e)}", "error"))
     
     def action_quit(self) -> None:
         """Quit the application"""
@@ -350,6 +369,14 @@ class DeepDomainTUI(App):
         if self.status_panel:
             self.status_panel.add_status_message(message, msg_type)
     
+    async def update_phase_async(self, phase: str, progress: int = 0):
+        """Update the current phase asynchronously (thread-safe)"""
+        await self.update_manager.queue_update("phase_update", (phase, progress))
+    
+    async def add_status_message_async(self, message: str, msg_type: str = "info"):
+        """Add a status message asynchronously (thread-safe)"""
+        await self.update_manager.queue_update("status_message", (message, msg_type))
+    
     def start_command(self, command: str):
         """Start tracking a command"""
         if self.output_panel:
@@ -365,6 +392,18 @@ class DeepDomainTUI(App):
         if self.output_panel:
             self.output_panel.finish_command()
     
+    async def add_command_output_async(self, text: str):
+        """Add command output asynchronously (thread-safe)"""
+        await self.update_manager.queue_update("command_output", text)
+    
+    async def start_command_async(self, command: str):
+        """Start tracking a command asynchronously (thread-safe)"""
+        await self.update_manager.queue_update("command_start", command)
+    
+    async def finish_command_async(self):
+        """Mark current command as finished asynchronously (thread-safe)"""
+        await self.update_manager.queue_update("command_finish", None)
+    
     async def run_command_async(self, command: str, workdir: Path, callback: Optional[Callable] = None) -> None:
         """
         Run a command asynchronously with live output streaming.
@@ -372,14 +411,16 @@ class DeepDomainTUI(App):
         """
         def output_callback(text: str):
             """Callback for command output"""
-            self.add_command_output(text)
+            # Schedule async update to avoid blocking
+            asyncio.create_task(self.add_command_output_async(text))
         
         def error_callback(text: str):
             """Callback for command errors"""
-            self.add_command_output(f"[red]ERROR: {text}[/red]")
+            # Schedule async update to avoid blocking
+            asyncio.create_task(self.add_command_output_async(f"[red]ERROR: {text}[/red]"))
         
         # Start the command tracking
-        self.start_command(command)
+        await self.start_command_async(command)
         
         try:
             # Run command asynchronously
@@ -391,21 +432,21 @@ class DeepDomainTUI(App):
             )
             
             # Mark command as finished
-            self.finish_command()
+            await self.finish_command_async()
             
             # Handle completion
             if return_code != 0:
-                self.add_status_message(f"Command failed with return code {return_code}", "error")
+                await self.add_status_message_async(f"Command failed with return code {return_code}", "error")
             else:
-                self.add_status_message("Command completed successfully", "success")
+                await self.add_status_message_async("Command completed successfully", "success")
             
             # Call user callback if provided
             if callback:
                 callback(stdout, stderr, return_code)
                 
         except Exception as e:
-            self.finish_command()
-            self.add_status_message(f"Command error: {str(e)}", "error")
+            await self.finish_command_async()
+            await self.add_status_message_async(f"Command error: {str(e)}", "error")
             if callback:
                 callback("", str(e), 1)
     
@@ -426,6 +467,80 @@ class DeepDomainTUI(App):
         # Wait for completion (this will block the calling thread)
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(result_future)
+
+
+class ThreadSafeTUIWrapper:
+    """
+    Thread-safe wrapper for TUI that can be used from background threads.
+    This bridges the gap between synchronous scanning callbacks and async TUI updates.
+    """
+    
+    def __init__(self, tui_app: DeepDomainTUI):
+        self.tui_app = tui_app
+        self._loop = None
+    
+    def _get_event_loop(self):
+        """Get the event loop for the TUI"""
+        if self._loop is None:
+            # Get the TUI's event loop
+            try:
+                self._loop = self.tui_app._loop
+            except AttributeError:
+                # Fallback: try to get the current running loop
+                try:
+                    self._loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    # No loop running, we'll use direct updates
+                    self._loop = None
+        return self._loop
+    
+    def update_phase(self, phase: str, progress: int = 0):
+        """Update the current phase (thread-safe)"""
+        loop = self._get_event_loop()
+        if loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self.tui_app.update_phase_async(phase, progress), 
+                loop
+            )
+        else:
+            # Fallback to direct update if no loop available
+            self.tui_app.update_phase(phase, progress)
+    
+    def add_status_message(self, message: str, msg_type: str = "info"):
+        """Add a status message (thread-safe)"""
+        loop = self._get_event_loop()
+        if loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self.tui_app.add_status_message_async(message, msg_type), 
+                loop
+            )
+        else:
+            # Fallback to direct update if no loop available
+            self.tui_app.add_status_message(message, msg_type)
+    
+    def run_command_live(self, command: str, workdir: Path) -> tuple[str, str, int]:
+        """Run a command with live output (thread-safe)"""
+        loop = self._get_event_loop()
+        if loop and loop.is_running():
+            # Create a future to wait for completion
+            future = asyncio.run_coroutine_threadsafe(
+                self._run_command_async(command, workdir), 
+                loop
+            )
+            return future.result()
+        else:
+            # Fallback to direct execution if no loop available
+            return self.tui_app.run_command_live(command, workdir)
+    
+    async def _run_command_async(self, command: str, workdir: Path) -> tuple[str, str, int]:
+        """Internal async method to run command"""
+        result_future = asyncio.Future()
+        
+        def callback(stdout: str, stderr: str, return_code: int):
+            result_future.set_result((stdout, stderr, return_code))
+        
+        await self.tui_app.run_command_async(command, workdir, callback)
+        return await result_future
 
 
 class TUIWrapper:
