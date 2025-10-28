@@ -271,13 +271,6 @@ class DeepDomainTUI(App):
                 self.finish_command()
                 self.add_status_message(f"Command error: {worker.error}", "error")
     
-    def on_worker_progress(self, event: Worker.Progress) -> None:
-        """Handle worker progress updates for live output"""
-        worker = event.worker
-        if worker.name.startswith("command_") and event.value:
-            # This is live output from the command
-            self.add_command_output(event.value)
-    
     def start_scanning(self):
         """Start the scanning process"""
         if self.scanning_callback:
@@ -432,21 +425,27 @@ class DeepDomainTUI(App):
                 stdout_lines = []
                 stderr_lines = []
                 
-                # Read output line by line and yield progress
+                # Read output line by line and update UI live
                 while True:
                     output = process.stdout.readline()
                     if output == '' and process.poll() is not None:
                         break
                     if output:
                         stdout_lines.append(output.strip())
-                        # Yield the output for live updates
-                        yield output
+                        # Use call_from_thread for live updates
+                        try:
+                            self.call_from_thread(self.add_command_output, output)
+                        except:
+                            pass
                     
                     # Also read stderr
                     error = process.stderr.readline()
                     if error:
                         stderr_lines.append(error.strip())
-                        yield error
+                        try:
+                            self.call_from_thread(self.add_command_output, error)
+                        except:
+                            pass
                 
                 # Wait for process to complete
                 return_code = process.wait()
