@@ -27,18 +27,11 @@ def run_resolve(fs: FileSystem, executor: Execute) -> None:
     else:
         resolved_path = resolved_full
 
-    expected_title = "# Resolved Hosts"
-    first_line = ""
-    try:
-        with resolved_path.open("r", encoding="utf-8") as fh:
-            first_line = fh.readline().rstrip("\n\r")
-    except Exception:
-        first_line = ""
-    if first_line != expected_title:
-        out = Output()
-        out.addTitle("Resolved Hosts")
-        out.newLine()
-        out.write_to_file(resolved_path)
+    # Title - always add for first-time runs
+    out = Output()
+    out.addTitle("Resolved Hosts")
+    out.newLine()
+    out.write_to_file(resolved_path)
 
     # Child executor in ./scanning/resolve
     child_exec = Execute(workdir=Path(executor.workdir) / "scanning/resolve", tui=executor.tui)
@@ -83,18 +76,11 @@ def run_network_discover(fs: FileSystem, executor: Execute) -> None:
         quick_md = fs.createFile("quick_discovery.md", location="scanning/network_discover/quick")
     else:
         quick_md = quick_md_full
-    quick_expected = "# Quick Discovery"
-    q_first = ""
-    try:
-        with quick_md.open("r", encoding="utf-8") as fh:
-            q_first = fh.readline().rstrip("\n\r")
-    except Exception:
-        q_first = ""
-    if q_first != quick_expected:
-        quick_out = Output()
-        quick_out.addTitle("Quick Discovery")
-        quick_out.newLine()
-        quick_out.write_to_file(quick_md)
+    # Title - always add for first-time runs
+    quick_out = Output()
+    quick_out.addTitle("Quick Discovery")
+    quick_out.newLine()
+    quick_out.write_to_file(quick_md)
 
     # detailed
     detailed_dir = net_dir.joinpath("detailed")
@@ -105,18 +91,11 @@ def run_network_discover(fs: FileSystem, executor: Execute) -> None:
         det_md = fs.createFile("detailed_discovery.md", location="scanning/network_discover/detailed")
     else:
         det_md = det_md_full
-    det_expected = "# Detailed Discovery"
-    d_first = ""
-    try:
-        with det_md.open("r", encoding="utf-8") as fh:
-            d_first = fh.readline().rstrip("\n\r")
-    except Exception:
-        d_first = ""
-    if d_first != det_expected:
-        det_out = Output()
-        det_out.addTitle("Detailed Discovery")
-        det_out.newLine()
-        det_out.write_to_file(det_md)
+    # Title - always add for first-time runs
+    det_out = Output()
+    det_out.addTitle("Detailed Discovery")
+    det_out.newLine()
+    det_out.write_to_file(det_md)
 
     # Child executors for quick/detailed
     quick_exec = Execute(workdir=Path(executor.workdir) / "scanning/network_discover/quick", tui=executor.tui)

@@ -99,7 +99,7 @@ def run(
             fs = FileSystem(output)
             executor = Execute(workdir=output, tui=tui_app)
             
-            # create record.md (with existence and title checks)
+            # create record.md (always add title for first-time runs)
             record_rel = "record.md"
             record_full = (output / record_rel)
             if not record_full.exists():
@@ -108,18 +108,6 @@ def run(
                 record_out.addTitle("Record")
                 record_out.newLine()
                 record_out.write_to_file(record_path)
-            else:
-                # Only add title if first line does not already match
-                first_line = ""
-                try:
-                    with record_full.open("r", encoding="utf-8") as fh:
-                        first_line = fh.readline().rstrip("\n\r")
-                except Exception:
-                    first_line = ""
-                expected_title = "# Record"
-                if first_line != expected_title:
-                    # Do not overwrite existing files; skip adding title if different content exists
-                    pass
 
             tui_app.add_status_message("Workspace initialized", "success")
             tui_app.update_phase("Ready to begin", 20)

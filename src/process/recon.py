@@ -37,18 +37,11 @@ def run_harvest(domain: str, fs: FileSystem, executor: Execute, record_file: str
     else:
         harvest_md = harvest_md_full
     
-    expected_title = "# Harvest"
-    first_line = ""
-    try:
-        with harvest_md.open("r", encoding="utf-8") as fh:
-            first_line = fh.readline().rstrip("\n\r")
-    except Exception:
-        first_line = ""
-    if first_line != expected_title:
-        out = Output()
-        out.addTitle("Harvest")
-        out.newLine()
-        out.write_to_file(harvest_md)
+    # Title - always add for first-time runs
+    out = Output()
+    out.addTitle("Harvest")
+    out.newLine()
+    out.write_to_file(harvest_md)
     free_engines = ['baidu','certspotter','chaos','commoncrawl','crtsh','duckduckgo','gitlab','hackertarget','hudsonrock','linkedin','linkedin_links','netcraft','omnisint','otx','qwant','rapiddns','robtex','subdomaincenter','subdomainfinderc99','sublist3r','threatcrowd','threatminer','waybackarchive','yahoo']
     # Child executor in ./recon/harvest
     child_exec = Execute(workdir=Path(executor.workdir) / "recon/harvest", tui=executor.tui)
@@ -78,18 +71,11 @@ def run_shodan(domain: str, fs: FileSystem, executor: Execute, record_file: str 
     else:
         shodan_md = shodan_md_full
     
-    expected_title = "# Shodan"
-    first_line = ""
-    try:
-        with shodan_md.open("r", encoding="utf-8") as fh:
-            first_line = fh.readline().rstrip("\n\r")
-    except Exception:
-        first_line = ""
-    if first_line != expected_title:
-        out = Output()
-        out.addTitle("Shodan")
-        out.newLine()
-        out.write_to_file(shodan_md)
+    # Title - always add for first-time runs
+    out = Output()
+    out.addTitle("Shodan")
+    out.newLine()
+    out.write_to_file(shodan_md)
     
     # Child executor in ./recon/shodan
     child_exec = Execute(workdir=Path(executor.workdir) / "recon/shodan", tui=executor.tui)
@@ -116,20 +102,11 @@ def run_whoami(domain: str, fs: FileSystem, executor: Execute, record_file: str 
     else:
         whoami_path = whoami_full
 
-    # Title
-    # Add title only if first line does not already match
-    expected_title = "# WhoAmI"
-    first_line = ""
-    try:
-        with whoami_path.open("r", encoding="utf-8") as fh:
-            first_line = fh.readline().rstrip("\n\r")
-    except Exception:
-        first_line = ""
-    if first_line != expected_title:
-        head = Output()
-        head.addTitle("WhoAmI")
-        head.newLine()
-        head.write_to_file(whoami_path)
+    # Title - always add for first-time runs
+    head = Output()
+    head.addTitle("WhoAmI")
+    head.newLine()
+    head.write_to_file(whoami_path)
 
     # host <domain>
     host_cmd = f"host {domain}"
@@ -194,19 +171,11 @@ def run_subdomains(domain: str, fs: FileSystem, executor: Execute, record_file: 
     else:
         sub_md_path = sub_md_full
 
-    # Title
-    expected_title = "# Subdomains"
-    first_line = ""
-    try:
-        with sub_md_path.open("r", encoding="utf-8") as fh:
-            first_line = fh.readline().rstrip("\n\r")
-    except Exception:
-        first_line = ""
-    if first_line != expected_title:
-        head = Output()
-        head.addTitle("Subdomains")
-        head.newLine()
-        head.write_to_file(sub_md_path)
+    # Title - always add for first-time runs
+    head = Output()
+    head.addTitle("Subdomains")
+    head.newLine()
+    head.write_to_file(sub_md_path)
 
     # Use a child executor scoped to recon/subdomains so file outputs land there
     child_exec = Execute(workdir=Path(executor.workdir) / sub_rel_dir, tui=executor.tui)

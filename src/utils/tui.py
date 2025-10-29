@@ -465,18 +465,44 @@ class DeepDomainTUI(App):
         Synchronous wrapper for run_command_async.
         This method blocks until completion - use run_command_async when possible.
         """
-        # Create a future to wait for completion
-        result_future = asyncio.Future()
+        import subprocess
         
-        def callback(stdout: str, stderr: str, return_code: int):
-            result_future.set_result((stdout, stderr, return_code))
-        
-        # Schedule the async command
-        asyncio.create_task(self.run_command_async(command, workdir, callback))
-        
-        # Wait for completion (this will block the calling thread)
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(result_future)
+        # For TUI, we need to avoid blocking the main thread
+        # Use a simple subprocess approach instead of complex async handling
+        try:
+            # Start command tracking
+            self.start_command(command)
+            
+            # Run command with timeout
+            proc = subprocess.run(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(workdir),
+                timeout=300  # 5 minute timeout
+            )
+            
+            # Add output to TUI
+            if proc.stdout:
+                self.add_command_output(proc.stdout)
+            if proc.stderr:
+                self.add_command_output(f"[red]ERROR: {proc.stderr}[/red]")
+            
+            # Finish command tracking
+            self.finish_command()
+            
+            return proc.stdout, proc.stderr, proc.returncode
+            
+        except subprocess.TimeoutExpired:
+            self.finish_command()
+            self.add_status_message("Command timed out", "error")
+            return "", "Command timed out", 1
+        except Exception as e:
+            self.finish_command()
+            self.add_status_message(f"Command error: {str(e)}", "error")
+            return "", str(e), 1
 
 
 class ThreadSafeTUIWrapper:
@@ -529,24 +555,8 @@ class ThreadSafeTUIWrapper:
             self.tui_app.add_status_message(message, msg_type)
     
     def run_command_live(self, command: str, workdir: Path) -> tuple[str, str, int]:
-        """Run a command with live output (thread-safe) - STREAMING VERSION"""
+        """Run a command with live output (thread-safe) - SIMPLIFIED VERSION"""
         import subprocess
-        import threading
-        import queue
-        
-        # Create a queue for streaming output
-        output_queue = queue.Queue()
-        error_queue = queue.Queue()
-        
-        def stream_output(pipe, output_queue):
-            """Stream output from a pipe to a queue"""
-            try:
-                for line in iter(pipe.readline, ''):
-                    if line:
-                        output_queue.put(line.strip())
-                pipe.close()
-            except Exception:
-                pass
         
         try:
             # Start command tracking in TUI
@@ -557,86 +567,31 @@ class ThreadSafeTUIWrapper:
                     loop
                 )
             
-            # Run command with streaming output
-            proc = subprocess.Popen(
+            # Run command with simple subprocess - no complex streaming
+            proc = subprocess.run(
                 command,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=str(workdir),
-                bufsize=1,  # Line buffered
-                universal_newlines=True
+                timeout=300  # 5 minute timeout
             )
             
-            # Start streaming threads
-            stdout_thread = threading.Thread(target=stream_output, args=(proc.stdout, output_queue))
-            stderr_thread = threading.Thread(target=stream_output, args=(proc.stderr, error_queue))
-            stdout_thread.daemon = True
-            stderr_thread.daemon = True
-            stdout_thread.start()
-            stderr_thread.start()
+            # Stream output to TUI
+            if proc.stdout:
+                if loop and loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self.tui_app.add_command_output_async(proc.stdout), 
+                        loop
+                    )
             
-            # Collect output while streaming to TUI
-            stdout_lines = []
-            stderr_lines = []
-            
-            # Stream output for up to 5 minutes
-            import time
-            start_time = time.time()
-            timeout = 300  # 5 minutes
-            
-            while proc.poll() is None and (time.time() - start_time) < timeout:
-                # Process stdout
-                try:
-                    while True:
-                        line = output_queue.get_nowait()
-                        stdout_lines.append(line)
-                        if loop and loop.is_running():
-                            asyncio.run_coroutine_threadsafe(
-                                self.tui_app.add_command_output_async(line), 
-                                loop
-                            )
-                except queue.Empty:
-                    pass
-                
-                # Process stderr
-                try:
-                    while True:
-                        line = error_queue.get_nowait()
-                        stderr_lines.append(line)
-                        if loop and loop.is_running():
-                            asyncio.run_coroutine_threadsafe(
-                                self.tui_app.add_command_output_async(f"[red]ERROR: {line}[/red]"), 
-                                loop
-                            )
-                except queue.Empty:
-                    pass
-                
-                # Small delay to prevent busy waiting
-                time.sleep(0.1)
-            
-            # Wait for process to complete or timeout
-            try:
-                proc.wait(timeout=max(0, timeout - (time.time() - start_time)))
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-            
-            # Collect any remaining output
-            try:
-                while True:
-                    line = output_queue.get_nowait()
-                    stdout_lines.append(line)
-            except queue.Empty:
-                pass
-            
-            try:
-                while True:
-                    line = error_queue.get_nowait()
-                    stderr_lines.append(line)
-            except queue.Empty:
-                pass
+            if proc.stderr:
+                if loop and loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self.tui_app.add_command_output_async(f"[red]ERROR: {proc.stderr}[/red]"), 
+                        loop
+                    )
             
             # Finish command tracking
             if loop and loop.is_running():
@@ -645,10 +600,20 @@ class ThreadSafeTUIWrapper:
                     loop
                 )
             
-            return '\n'.join(stdout_lines), '\n'.join(stderr_lines), proc.returncode
+            return proc.stdout, proc.stderr, proc.returncode
             
+        except subprocess.TimeoutExpired:
+            # Handle timeout
+            loop = self._get_event_loop()
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self.tui_app.add_status_message_async("Command timed out", "error"), 
+                    loop
+                )
+            return "", "Command timed out", 1
         except Exception as e:
             # Handle errors
+            loop = self._get_event_loop()
             if loop and loop.is_running():
                 asyncio.run_coroutine_threadsafe(
                     self.tui_app.add_status_message_async(f"Command error: {str(e)}", "error"), 

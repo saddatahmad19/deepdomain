@@ -28,18 +28,11 @@ def run_vulnerable(fs: FileSystem, executor: Execute, record_file: str = "record
     else:
         vuln_md = vuln_md_full
 
-    expected_title = "# Vulnerable"
-    first_line = ""
-    try:
-        with vuln_md.open("r", encoding="utf-8") as fh:
-            first_line = fh.readline().rstrip("\n\r")
-    except Exception:
-        first_line = ""
-    if first_line != expected_title:
-        out = Output()
-        out.addTitle("Vulnerable")
-        out.newLine()
-        out.write_to_file(vuln_md)
+    # Title - always add for first-time runs
+    out = Output()
+    out.addTitle("Vulnerable")
+    out.newLine()
+    out.write_to_file(vuln_md)
 
     # Child executor in ./enumeration/vulnerable
     child_exec = Execute(workdir=Path(executor.workdir) / "enumeration/vulnerable", tui=executor.tui)
