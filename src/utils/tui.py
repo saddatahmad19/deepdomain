@@ -317,6 +317,8 @@ class DeepDomainTUI(App):
             await loop.run_in_executor(None, self.scanning_callback, thread_safe_tui)
         except Exception as e:
             await self.update_manager.queue_update("status_message", (f"Scanning error: {str(e)}", "error"))
+            # Also update phase to show error state
+            await self.update_manager.queue_update("phase_update", ("Error", 0))
     
     def action_quit(self) -> None:
         """Quit the application"""
@@ -519,18 +521,64 @@ class ThreadSafeTUIWrapper:
             self.tui_app.add_status_message(message, msg_type)
     
     def run_command_live(self, command: str, workdir: Path) -> tuple[str, str, int]:
-        """Run a command with live output (thread-safe)"""
-        loop = self._get_event_loop()
-        if loop and loop.is_running():
-            # Create a future to wait for completion
-            future = asyncio.run_coroutine_threadsafe(
-                self._run_command_async(command, workdir), 
-                loop
+        """Run a command with live output (thread-safe) - NON-BLOCKING VERSION"""
+        # For thread-safe execution, we need to avoid blocking the scanning callback
+        # Instead, we'll run the command directly in this thread to avoid deadlock
+        import subprocess
+        try:
+            # Run command directly in this thread to avoid TUI event loop deadlock
+            proc = subprocess.run(
+                command, 
+                shell=True, 
+                capture_output=True, 
+                text=True, 
+                cwd=str(workdir),
+                timeout=300  # 5 minute timeout
             )
-            return future.result()
-        else:
-            # Fallback to direct execution if no loop available
-            return self.tui_app.run_command_live(command, workdir)
+            
+            # Update TUI with command start/end asynchronously if possible
+            loop = self._get_event_loop()
+            if loop and loop.is_running():
+                # Schedule async updates without blocking
+                asyncio.run_coroutine_threadsafe(
+                    self.tui_app.start_command_async(command), 
+                    loop
+                )
+                
+                # Stream output if there's any
+                if proc.stdout:
+                    for line in proc.stdout.split('\n'):
+                        if line.strip():
+                            asyncio.run_coroutine_threadsafe(
+                                self.tui_app.add_command_output_async(line), 
+                                loop
+                            )
+                
+                asyncio.run_coroutine_threadsafe(
+                    self.tui_app.finish_command_async(), 
+                    loop
+                )
+            
+            return proc.stdout, proc.stderr, proc.returncode
+            
+        except subprocess.TimeoutExpired:
+            # Handle timeout
+            loop = self._get_event_loop()
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self.tui_app.add_status_message_async(f"Command timed out: {command}", "error"), 
+                    loop
+                )
+            return "", "Command timed out", 1
+        except Exception as e:
+            # Handle other errors
+            loop = self._get_event_loop()
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self.tui_app.add_status_message_async(f"Command error: {str(e)}", "error"), 
+                    loop
+                )
+            return "", str(e), 1
     
     async def _run_command_async(self, command: str, workdir: Path) -> tuple[str, str, int]:
         """Internal async method to run command"""

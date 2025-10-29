@@ -41,7 +41,7 @@ def run_resolve(fs: FileSystem, executor: Execute) -> None:
         out.write_to_file(resolved_path)
 
     # Child executor in ./scanning/resolve
-    child_exec = Execute(workdir=Path(executor.workdir) / "scanning/resolve")
+    child_exec = Execute(workdir=Path(executor.workdir) / "scanning/resolve", tui=executor.tui)
 
     # d) dnsx from all_subdomains.txt - use absolute path
     all_subdomains_abs = fs.base.joinpath("recon/subdomains/all_subdomains.txt")
@@ -119,8 +119,8 @@ def run_network_discover(fs: FileSystem, executor: Execute) -> None:
         det_out.write_to_file(det_md)
 
     # Child executors for quick/detailed
-    quick_exec = Execute(workdir=Path(executor.workdir) / "scanning/network_discover/quick")
-    det_exec = Execute(workdir=Path(executor.workdir) / "scanning/network_discover/detailed")
+    quick_exec = Execute(workdir=Path(executor.workdir) / "scanning/network_discover/quick", tui=executor.tui)
+    det_exec = Execute(workdir=Path(executor.workdir) / "scanning/network_discover/detailed", tui=executor.tui)
 
     # Use absolute paths
     resolved_hosts_abs = fs.base.joinpath("scanning/resolve/resolved_hosts.txt")
@@ -151,7 +151,7 @@ def run_network_discover(fs: FileSystem, executor: Execute) -> None:
     if masscan_results_abs.exists() and masscan_results_abs.stat().st_size > 0:
         # Parse ports from masscan output
         grep_cmd = f"grep open {masscan_results_abs} | cut -d' ' -f4 | cut -d/ -f1 | sort -u"
-        proc = subprocess.run(grep_cmd, shell=True, capture_output=True, text=True, cwd=str(quick_exec.workdir))
+        proc = subprocess.run(grep_cmd, shell=True, capture_output=True, text=True, cwd=str(quick_exec.workdir), timeout=30)
         ports_str = proc.stdout.strip()
         if ports_str:
             # Convert newlines to commas for nmap

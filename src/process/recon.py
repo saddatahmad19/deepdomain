@@ -51,7 +51,7 @@ def run_harvest(domain: str, fs: FileSystem, executor: Execute, record_file: str
         out.write_to_file(harvest_md)
     free_engines = ['baidu','certspotter','chaos','commoncrawl','crtsh','duckduckgo','gitlab','hackertarget','hudsonrock','linkedin','linkedin_links','netcraft','omnisint','otx','qwant','rapiddns','robtex','subdomaincenter','subdomainfinderc99','sublist3r','threatcrowd','threatminer','waybackarchive','yahoo']
     # Child executor in ./recon/harvest
-    child_exec = Execute(workdir=Path(executor.workdir) / "recon/harvest")
+    child_exec = Execute(workdir=Path(executor.workdir) / "recon/harvest", tui=executor.tui)
     
     # Run theHarvester
     harvest_cmd = f"theHarvester -d {domain} -b {','.join(free_engines)}"
@@ -92,7 +92,7 @@ def run_shodan(domain: str, fs: FileSystem, executor: Execute, record_file: str 
         out.write_to_file(shodan_md)
     
     # Child executor in ./recon/shodan
-    child_exec = Execute(workdir=Path(executor.workdir) / "recon/shodan")
+    child_exec = Execute(workdir=Path(executor.workdir) / "recon/shodan", tui=executor.tui)
     
     # Run shodan search
     shodan_cmd = f"shodan search hostname:{domain} --fields ip_str,port,org,data --limit 100"
@@ -184,7 +184,7 @@ def run_subdomains(domain: str, fs: FileSystem, executor: Execute, record_file: 
         head.write_to_file(sub_md_path)
 
     # Use a child executor scoped to recon/subdomains so file outputs land there
-    child_exec = Execute(workdir=Path(executor.workdir) / sub_rel_dir)
+    child_exec = Execute(workdir=Path(executor.workdir) / sub_rel_dir, tui=executor.tui)
 
     # d) subfinder - domain
     subfinder_cmd = f"subfinder -d {domain} -oD ./ -o subfinder_results.md"

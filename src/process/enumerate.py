@@ -42,7 +42,7 @@ def run_vulnerable(fs: FileSystem, executor: Execute, record_file: str = "record
         out.write_to_file(vuln_md)
 
     # Child executor in ./enumeration/vulnerable
-    child_exec = Execute(workdir=Path(executor.workdir) / "enumeration/vulnerable")
+    child_exec = Execute(workdir=Path(executor.workdir) / "enumeration/vulnerable", tui=executor.tui)
 
     # Shared absolute path to live_subdomains produced in recon step 5
     live_subdomains_abs = fs.base.joinpath("recon/subdomains/live_subdomains.txt")
