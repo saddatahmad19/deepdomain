@@ -10,13 +10,13 @@ from rich import print as rprint
 from rich.text import Text
 import time
 
-from src.classes.filesystems import FileSystem
-from src.classes.output import Output
-from src.classes.execute import Execute
-from src.process.recon import run_whoami, run_subdomains, run_harvest, run_shodan
-from src.process.scanning import prepare_scanning_workspace, run_resolve, run_network_discover
-from src.process.enumerate import prepare_enumeration_workspace, run_vulnerable
-from src.utils.tui import create_tui
+from classes.filesystems import FileSystem
+from classes.output import Output
+from classes.execute import Execute
+from process.recon import run_whoami, run_subdomains, run_harvest, run_shodan
+from process.scanning import prepare_scanning_workspace, run_resolve, run_network_discover
+from process.enumerate import prepare_enumeration_workspace, run_vulnerable
+from utils.tui import create_tui
 
 app = typer.Typer(help="DeepDomain — Advanced Security Reconnaissance Tool")
 console = Console()

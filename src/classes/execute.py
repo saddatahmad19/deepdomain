@@ -5,7 +5,7 @@ import re
 from typing import Tuple, Optional, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
-    from src.utils.tui import TUIWrapper, ThreadSafeTUIWrapper
+    from utils.tui import TUIWrapper, ThreadSafeTUIWrapper
 
 class Execute:
     def __init__(self, workdir: Path | str, tui: Optional[Union['TUIWrapper', 'ThreadSafeTUIWrapper']] = None):

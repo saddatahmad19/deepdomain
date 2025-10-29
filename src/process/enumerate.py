@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from src.classes.filesystems import FileSystem
-from src.classes.output import Output
-from src.classes.execute import Execute
+from classes.filesystems import FileSystem
+from classes.output import Output
+from classes.execute import Execute
 
 
 def prepare_enumeration_workspace(fs: FileSystem) -> None:
@@ -83,13 +83,25 @@ def _append_command(fs: FileSystem, files: list[str], command: str) -> None:
     out = Output()
     out.addCommand(command)
     out.newLine()
+    content = out.text()
+    
+    # Use direct file operations instead of atomic writer to avoid TUI blocking
     for f in files:
-        fs.appendOutput(f, out)
+        target = fs.base.joinpath(f)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as fh:
+            fh.write(content)
 
 
 def _append_output(fs: FileSystem, file: str, text: str) -> None:
     out = Output()
     out.addCommandOutput(text)
     out.newLine()
-    fs.appendOutput(file, out)
+    content = out.text()
+    
+    # Use direct file operations instead of atomic writer to avoid TUI blocking
+    target = fs.base.joinpath(file)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as fh:
+        fh.write(content)
 

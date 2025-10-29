@@ -1,7 +1,7 @@
 # src/filesystem.py
 from pathlib import Path
 from typing import Union
-from ..utils.atomic_ops import atomic_writer
+from utils.atomic_ops import atomic_writer
 
 class FileSystem:
     def __init__(self, base: Union[str, Path]):
