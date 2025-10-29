@@ -1,9 +1,9 @@
 from pathlib import Path
 import subprocess
 
-from classes.filesystems import FileSystem
-from classes.output import Output
-from classes.execute import Execute
+from src.classes.filesystems import FileSystem
+from src.classes.output import Output
+from src.classes.execute import Execute
 
 
 def prepare_scanning_workspace(fs: FileSystem) -> None:

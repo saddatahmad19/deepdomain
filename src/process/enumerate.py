@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from classes.filesystems import FileSystem
-from classes.output import Output
-from classes.execute import Execute
+from src.classes.filesystems import FileSystem
+from src.classes.output import Output
+from src.classes.execute import Execute
 
 
 def prepare_enumeration_workspace(fs: FileSystem) -> None:

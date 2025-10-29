@@ -14,14 +14,14 @@ from unittest.mock import Mock, patch, MagicMock
 import subprocess
 from typing import List, Tuple
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from classes.filesystems import FileSystem
-from classes.output import Output
-from classes.execute import Execute
-from process.recon import run_whoami, run_subdomains, run_harvest, run_shodan
-from utils.cli import run_recon, _check_tools
+from src.classes.filesystems import FileSystem
+from src.classes.output import Output
+from src.classes.execute import Execute
+from src.process.recon import run_whoami, run_subdomains, run_harvest, run_shodan
+from src.utils.cli import run_recon, _check_tools
 
 
 class MockTUI:

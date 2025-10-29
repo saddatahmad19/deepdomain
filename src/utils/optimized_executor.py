@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from .atomic_ops import AsyncCommandRunner, atomic_writer
-from classes.filesystems import FileSystem
+from src.classes.filesystems import FileSystem
 
 
 class OptimizedExecutor:
