@@ -151,8 +151,6 @@ ignore_merge_commits = true
 
 # Changelog configuration
 [tool.semantic_release.changelog]
-changelog_file = "CHANGELOG.md"
-output_format = "md"
 exclude_commit_patterns = [
     '''chore(?:\([^)]*?\))?: .+''',
     '''ci(?:\([^)]*?\))?: .+''',
