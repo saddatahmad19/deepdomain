@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v1.1.4 (2025-10-28)
+
+### Features
+
+- Add changelog auto-generation feature
+  ([`a0a7c35`](https://github.com/saddatahmad19/deepdomain/commit/a0a7c3543d173d10db529f274c74e426dd9b490c))
+
+
+## Unreleased
+
+### Features
+
+- Add changelog auto-generation feature
+  ([`a0a7c35`](https://github.com/saddatahmad19/deepdomain/commit/a0a7c3543d173d10db529f274c74e426dd9b490c))
+
+
 ## Unreleased
 
 
