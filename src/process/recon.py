@@ -134,22 +134,47 @@ def run_whoami(domain: str, fs: FileSystem, executor: Execute, record_file: str 
     # host <domain>
     host_cmd = f"host {domain}"
     _append_command(fs, [whoami_rel, record_file], host_cmd)
-    stdout, stderr, rc = executor.run_command(host_cmd)
-    _append_output(fs, whoami_rel, stdout or stderr or "")
-    ip = executor.extract_ip(stdout)
+    try:
+        stdout, stderr, rc = executor.run_command(host_cmd)
+        _append_output(fs, whoami_rel, stdout or stderr or "")
+        ip = executor.extract_ip(stdout)
+        
+        # Add debug output to help identify where it gets stuck
+        if executor.tui:
+            executor.tui.add_status_message(f"Host command completed: {host_cmd}", "info")
+    except Exception as e:
+        if executor.tui:
+            executor.tui.add_status_message(f"Host command failed: {str(e)}", "error")
+        ip = None
 
     # whois <domain_IP>
     if ip:
         whois_ip_cmd = f"whois {ip}"
         _append_command(fs, [whoami_rel, record_file], whois_ip_cmd)
-        stdout2, stderr2, rc2 = executor.run_command(whois_ip_cmd)
-        _append_output(fs, whoami_rel, stdout2 or stderr2 or "")
+        try:
+            if executor.tui:
+                executor.tui.add_status_message(f"Running whois IP command: {whois_ip_cmd}", "info")
+            stdout2, stderr2, rc2 = executor.run_command(whois_ip_cmd)
+            _append_output(fs, whoami_rel, stdout2 or stderr2 or "")
+            if executor.tui:
+                executor.tui.add_status_message(f"Whois IP command completed", "success")
+        except Exception as e:
+            if executor.tui:
+                executor.tui.add_status_message(f"Whois IP command failed: {str(e)}", "error")
 
     # whois <domain>
     whois_domain_cmd = f"whois {domain}"
     _append_command(fs, [whoami_rel, record_file], whois_domain_cmd)
-    stdout3, stderr3, rc3 = executor.run_command(whois_domain_cmd)
-    _append_output(fs, whoami_rel, stdout3 or stderr3 or "")
+    try:
+        if executor.tui:
+            executor.tui.add_status_message(f"Running whois domain command: {whois_domain_cmd}", "info")
+        stdout3, stderr3, rc3 = executor.run_command(whois_domain_cmd)
+        _append_output(fs, whoami_rel, stdout3 or stderr3 or "")
+        if executor.tui:
+            executor.tui.add_status_message(f"Whois domain command completed", "success")
+    except Exception as e:
+        if executor.tui:
+            executor.tui.add_status_message(f"Whois domain command failed: {str(e)}", "error")
 
 
 def run_subdomains(domain: str, fs: FileSystem, executor: Execute, record_file: str = "record.md") -> None:

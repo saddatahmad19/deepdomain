@@ -164,27 +164,31 @@ def run_recon(domain: str, fs: FileSystem, executor: Execute, tui=None):
     tui.update_phase("Reconnaissance Phase", 30)
     tui.add_status_message("Starting reconnaissance phase...", "info")
     
-    # Execution set 1: WhoAmI
-    tui.add_status_message("Running whoami execution set...", "info")
-    run_whoami(domain, fs, executor)
-    tui.add_status_message("WhoAmI investigation complete", "success")
-    
-    # Execution set 2: Subdomains
-    tui.add_status_message("Discovering subdomains...", "info")
-    run_subdomains(domain, fs, executor)
-    tui.add_status_message("Subdomain discovery complete", "success")
-    
-    # Execution set 3: Harvest
-    tui.add_status_message("Harvesting information...", "info")
-    run_harvest(domain, fs, executor)
-    tui.add_status_message("Information harvesting complete", "success")
-    
-    # Execution set 4: Shodan
-    tui.add_status_message("Querying Shodan...", "info")
-    run_shodan(domain, fs, executor)
-    tui.add_status_message("Shodan reconnaissance complete", "success")
-    
-    tui.add_status_message("Reconnaissance phase complete", "success")
+    try:
+        # Execution set 1: WhoAmI
+        tui.add_status_message("Running whoami execution set...", "info")
+        run_whoami(domain, fs, executor)
+        tui.add_status_message("WhoAmI investigation complete", "success")
+        
+        # Execution set 2: Subdomains
+        tui.add_status_message("Discovering subdomains...", "info")
+        run_subdomains(domain, fs, executor)
+        tui.add_status_message("Subdomain discovery complete", "success")
+        
+        # Execution set 3: Harvest
+        tui.add_status_message("Harvesting information...", "info")
+        run_harvest(domain, fs, executor)
+        tui.add_status_message("Information harvesting complete", "success")
+        
+        # Execution set 4: Shodan
+        tui.add_status_message("Querying Shodan...", "info")
+        run_shodan(domain, fs, executor)
+        tui.add_status_message("Shodan reconnaissance complete", "success")
+        
+        tui.add_status_message("Reconnaissance phase complete", "success")
+    except Exception as e:
+        tui.add_status_message(f"Reconnaissance phase failed: {str(e)}", "error")
+        raise
 
 
 def run_scanning(fs: FileSystem, executor: Execute, tui=None):
@@ -192,22 +196,26 @@ def run_scanning(fs: FileSystem, executor: Execute, tui=None):
     tui.update_phase("Scanning Phase", 60)
     tui.add_status_message("Starting scanning phase...", "info")
     
-    # Prepare scanning workspace
-    tui.add_status_message("Preparing scanning workspace...", "info")
-    prepare_scanning_workspace(fs)
-    tui.add_status_message("Scanning workspace initialized", "success")
-    
-    # Execution set 5 & 9: Resolve
-    tui.add_status_message("Resolving hosts and live endpoints...", "info")
-    run_resolve(fs, executor)
-    tui.add_status_message("Host resolution complete", "success")
-    
-    # Execution set 6: Network discovery
-    tui.add_status_message("Performing network discovery...", "info")
-    run_network_discover(fs, executor)
-    tui.add_status_message("Network discovery complete", "success")
-    
-    tui.add_status_message("Scanning phase complete", "success")
+    try:
+        # Prepare scanning workspace
+        tui.add_status_message("Preparing scanning workspace...", "info")
+        prepare_scanning_workspace(fs)
+        tui.add_status_message("Scanning workspace initialized", "success")
+        
+        # Execution set 5 & 9: Resolve
+        tui.add_status_message("Resolving hosts and live endpoints...", "info")
+        run_resolve(fs, executor)
+        tui.add_status_message("Host resolution complete", "success")
+        
+        # Execution set 6: Network discovery
+        tui.add_status_message("Performing network discovery...", "info")
+        run_network_discover(fs, executor)
+        tui.add_status_message("Network discovery complete", "success")
+        
+        tui.add_status_message("Scanning phase complete", "success")
+    except Exception as e:
+        tui.add_status_message(f"Scanning phase failed: {str(e)}", "error")
+        raise
 
 
 def run_enumeration(fs: FileSystem, executor: Execute, tui=None):
@@ -215,14 +223,18 @@ def run_enumeration(fs: FileSystem, executor: Execute, tui=None):
     tui.update_phase("Enumeration Phase", 80)
     tui.add_status_message("Starting enumeration phase...", "info")
     
-    # Prepare enumeration workspace
-    tui.add_status_message("Preparing enumeration workspace...", "info")
-    prepare_enumeration_workspace(fs)
-    tui.add_status_message("Enumeration workspace initialized", "success")
-    
-    # Run vulnerable enumeration (execution sets 13-15)
-    tui.add_status_message("Running vulnerability enumeration...", "info")
-    run_vulnerable(fs, executor)
-    tui.add_status_message("Vulnerability enumeration complete", "success")
-    
-    tui.add_status_message("Enumeration phase complete", "success")
+    try:
+        # Prepare enumeration workspace
+        tui.add_status_message("Preparing enumeration workspace...", "info")
+        prepare_enumeration_workspace(fs)
+        tui.add_status_message("Enumeration workspace initialized", "success")
+        
+        # Run vulnerable enumeration (execution sets 13-15)
+        tui.add_status_message("Running vulnerability enumeration...", "info")
+        run_vulnerable(fs, executor)
+        tui.add_status_message("Vulnerability enumeration complete", "success")
+        
+        tui.add_status_message("Enumeration phase complete", "success")
+    except Exception as e:
+        tui.add_status_message(f"Enumeration phase failed: {str(e)}", "error")
+        raise

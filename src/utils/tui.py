@@ -314,7 +314,15 @@ class DeepDomainTUI(App):
             
             # Run the scanning callback in a thread to avoid blocking
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self.scanning_callback, thread_safe_tui)
+            
+            # Add a timeout to prevent infinite hanging
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self.scanning_callback, thread_safe_tui),
+                timeout=1800  # 30 minute timeout for entire scanning process
+            )
+        except asyncio.TimeoutError:
+            await self.update_manager.queue_update("status_message", ("Scanning process timed out after 30 minutes", "error"))
+            await self.update_manager.queue_update("phase_update", ("Timeout", 0))
         except Exception as e:
             await self.update_manager.queue_update("status_message", (f"Scanning error: {str(e)}", "error"))
             # Also update phase to show error state
@@ -521,58 +529,126 @@ class ThreadSafeTUIWrapper:
             self.tui_app.add_status_message(message, msg_type)
     
     def run_command_live(self, command: str, workdir: Path) -> tuple[str, str, int]:
-        """Run a command with live output (thread-safe) - NON-BLOCKING VERSION"""
-        # For thread-safe execution, we need to avoid blocking the scanning callback
-        # Instead, we'll run the command directly in this thread to avoid deadlock
+        """Run a command with live output (thread-safe) - STREAMING VERSION"""
         import subprocess
+        import threading
+        import queue
+        
+        # Create a queue for streaming output
+        output_queue = queue.Queue()
+        error_queue = queue.Queue()
+        
+        def stream_output(pipe, output_queue):
+            """Stream output from a pipe to a queue"""
+            try:
+                for line in iter(pipe.readline, ''):
+                    if line:
+                        output_queue.put(line.strip())
+                pipe.close()
+            except Exception:
+                pass
+        
         try:
-            # Run command directly in this thread to avoid TUI event loop deadlock
-            proc = subprocess.run(
-                command, 
-                shell=True, 
-                capture_output=True, 
-                text=True, 
-                cwd=str(workdir),
-                timeout=300  # 5 minute timeout
-            )
-            
-            # Update TUI with command start/end asynchronously if possible
+            # Start command tracking in TUI
             loop = self._get_event_loop()
             if loop and loop.is_running():
-                # Schedule async updates without blocking
                 asyncio.run_coroutine_threadsafe(
                     self.tui_app.start_command_async(command), 
                     loop
                 )
-                
-                # Stream output if there's any
-                if proc.stdout:
-                    for line in proc.stdout.split('\n'):
-                        if line.strip():
+            
+            # Run command with streaming output
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(workdir),
+                bufsize=1,  # Line buffered
+                universal_newlines=True
+            )
+            
+            # Start streaming threads
+            stdout_thread = threading.Thread(target=stream_output, args=(proc.stdout, output_queue))
+            stderr_thread = threading.Thread(target=stream_output, args=(proc.stderr, error_queue))
+            stdout_thread.daemon = True
+            stderr_thread.daemon = True
+            stdout_thread.start()
+            stderr_thread.start()
+            
+            # Collect output while streaming to TUI
+            stdout_lines = []
+            stderr_lines = []
+            
+            # Stream output for up to 5 minutes
+            import time
+            start_time = time.time()
+            timeout = 300  # 5 minutes
+            
+            while proc.poll() is None and (time.time() - start_time) < timeout:
+                # Process stdout
+                try:
+                    while True:
+                        line = output_queue.get_nowait()
+                        stdout_lines.append(line)
+                        if loop and loop.is_running():
                             asyncio.run_coroutine_threadsafe(
                                 self.tui_app.add_command_output_async(line), 
                                 loop
                             )
+                except queue.Empty:
+                    pass
                 
+                # Process stderr
+                try:
+                    while True:
+                        line = error_queue.get_nowait()
+                        stderr_lines.append(line)
+                        if loop and loop.is_running():
+                            asyncio.run_coroutine_threadsafe(
+                                self.tui_app.add_command_output_async(f"[red]ERROR: {line}[/red]"), 
+                                loop
+                            )
+                except queue.Empty:
+                    pass
+                
+                # Small delay to prevent busy waiting
+                time.sleep(0.1)
+            
+            # Wait for process to complete or timeout
+            try:
+                proc.wait(timeout=max(0, timeout - (time.time() - start_time)))
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            
+            # Collect any remaining output
+            try:
+                while True:
+                    line = output_queue.get_nowait()
+                    stdout_lines.append(line)
+            except queue.Empty:
+                pass
+            
+            try:
+                while True:
+                    line = error_queue.get_nowait()
+                    stderr_lines.append(line)
+            except queue.Empty:
+                pass
+            
+            # Finish command tracking
+            if loop and loop.is_running():
                 asyncio.run_coroutine_threadsafe(
                     self.tui_app.finish_command_async(), 
                     loop
                 )
             
-            return proc.stdout, proc.stderr, proc.returncode
+            return '\n'.join(stdout_lines), '\n'.join(stderr_lines), proc.returncode
             
-        except subprocess.TimeoutExpired:
-            # Handle timeout
-            loop = self._get_event_loop()
-            if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    self.tui_app.add_status_message_async(f"Command timed out: {command}", "error"), 
-                    loop
-                )
-            return "", "Command timed out", 1
         except Exception as e:
-            # Handle other errors
-            loop = self._get_event_loop()
+            # Handle errors
             if loop and loop.is_running():
                 asyncio.run_coroutine_threadsafe(
                     self.tui_app.add_status_message_async(f"Command error: {str(e)}", "error"), 

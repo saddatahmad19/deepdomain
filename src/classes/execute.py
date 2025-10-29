@@ -21,8 +21,20 @@ class Execute:
             return self.tui.run_command_live(command, self.workdir)
         else:
             # Fallback to regular subprocess if TUI not available
-            proc = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=self.workdir)
-            return proc.stdout, proc.stderr, proc.returncode
+            try:
+                proc = subprocess.run(
+                    command, 
+                    shell=True, 
+                    capture_output=True, 
+                    text=True, 
+                    cwd=self.workdir,
+                    timeout=300  # 5 minute timeout
+                )
+                return proc.stdout, proc.stderr, proc.returncode
+            except subprocess.TimeoutExpired:
+                return "", "Command timed out", 1
+            except Exception as e:
+                return "", str(e), 1
 
     def run_command_async(self, command: str, callback: Optional[callable] = None) -> None:
         """
