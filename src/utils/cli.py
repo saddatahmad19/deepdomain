@@ -2,7 +2,8 @@
 from pathlib import Path
 import shutil
 import typer
-from typing import List, Tuple
+import subprocess
+from typing import List, Tuple, Dict
 from rich.console import Console
 from rich.panel import Panel
 from rich.spinner import Spinner
@@ -27,6 +28,15 @@ DEFAULT_TOOLS = [
     "dnsx", "httpx", "curl", "jq", "whois", "host", "masscan", "gobuster", "nuclei"
 ]
 
+# Mapping of tool names to their apt package names (if different)
+APT_PACKAGE_MAP = {
+    "theHarvester": "theharvester",
+    "host": "dnsutils",  # host command comes from dnsutils package
+}
+
+# Go-based tools that need Go installed first
+GO_TOOLS = ["subfinder", "dnsx", "httpx", "gobuster", "nuclei"]
+
 def _check_tools(tools: List[str]) -> Tuple[List[str], str]:
     """Return (missing_tools, install_command)"""
     missing = [t for t in tools if shutil.which(t) is None]
@@ -47,6 +57,155 @@ def _print_success(message: str):
 def _print_info(message: str):
     """Print an info message"""
     console.print(f"ℹ {message}", style="dim")
+
+
+def _categorize_tools(tools: List[str]) -> Dict[str, List[str]]:
+    """Categorize tools into apt-installable and Go-based tools."""
+    apt_tools = []
+    go_tools = []
+    
+    for tool in tools:
+        if tool in GO_TOOLS:
+            go_tools.append(tool)
+        else:
+            apt_tools.append(tool)
+    
+    return {"apt": apt_tools, "go": go_tools}
+
+
+def _get_apt_package_name(tool: str) -> str:
+    """Get the apt package name for a tool."""
+    return APT_PACKAGE_MAP.get(tool, tool.lower())
+
+
+@app.command()
+def install_deps(
+    install_apt: bool = typer.Option(True, "--install-apt/--no-install-apt", help="Install apt packages automatically")
+):
+    """Install missing dependencies for DeepDomain.
+    
+    This command will:
+    1. Check for missing tools
+    2. Install missing apt packages (if --install-apt is set)
+    3. Display instructions for installing Go and Go-based tools
+    """
+    console.print("\n" + "="*60, style="bold cyan")
+    console.print(Panel.fit(
+        "[bold cyan]DeepDomain[/bold cyan] - Dependency Installation",
+        border_style="cyan"
+    ), style="bold")
+    console.print("="*60 + "\n", style="bold cyan")
+    
+    # Check for missing tools
+    missing, _ = _check_tools(DEFAULT_TOOLS)
+    
+    if not missing:
+        console.print("[bold green]✓ All required tools are already installed![/bold green]\n")
+        return
+    
+    # Categorize missing tools
+    categorized = _categorize_tools(missing)
+    missing_apt = categorized["apt"]
+    missing_go = categorized["go"]
+    
+    # Install apt packages
+    if missing_apt and install_apt:
+        console.print("\n[bold yellow]📦 Installing apt packages...[/bold yellow]")
+        
+        # Get apt package names
+        apt_packages = [_get_apt_package_name(tool) for tool in missing_apt]
+        apt_packages_str = " ".join(apt_packages)
+        
+        console.print(f"[dim]Running: sudo apt install -y {apt_packages_str}[/dim]")
+        
+        try:
+            result = subprocess.run(
+                ["sudo", "apt", "install", "-y"] + apt_packages,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            console.print("[bold green]✓ Apt packages installed successfully![/bold green]")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[bold red]✗ Failed to install apt packages:[/bold red] {e.stderr}")
+            console.print("[yellow]You may need to run the command manually:[/yellow]")
+            console.print(f"[bold white]sudo apt install -y {apt_packages_str}[/bold white]\n")
+        except FileNotFoundError:
+            console.print("[bold red]✗ sudo command not found. Please run manually:[/bold red]")
+            console.print(f"[bold white]sudo apt install -y {apt_packages_str}[/bold white]\n")
+    elif missing_apt:
+        console.print("\n[bold yellow]⚠ Missing apt-installable tools:[/bold yellow]")
+        apt_packages = [_get_apt_package_name(tool) for tool in missing_apt]
+        apt_packages_str = " ".join(apt_packages)
+        console.print(Panel(
+            "\n".join([f"[yellow]•[/yellow] {t}" for t in missing_apt]),
+            title="[yellow]Install with apt[/yellow]",
+            border_style="yellow"
+        ))
+        console.print(f"[bold cyan]Run:[/bold cyan] [bold white]sudo apt install -y {apt_packages_str}[/bold white]\n")
+    
+    # Show Go installation instructions
+    if missing_go:
+        console.print("\n[bold yellow]🔧 Go-based tools require Go to be installed:[/bold yellow]")
+        console.print(Panel(
+            "\n".join([f"[yellow]•[/yellow] {t}" for t in missing_go]),
+            title="[yellow]Go-based tools[/yellow]",
+            border_style="yellow"
+        ))
+        
+        console.print("\n[bold cyan]📖 Installing Go on Kali Linux:[/bold cyan]")
+        go_instructions = """
+1. Download the latest Go binary:
+   wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
+
+2. Remove any previous Go installation (if exists):
+   sudo rm -rf /usr/local/go
+
+3. Extract the archive:
+   sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
+
+4. Add Go to your PATH (add to ~/.bashrc or ~/.zshrc):
+   export PATH=$PATH:/usr/local/go/bin
+
+5. Reload your shell configuration:
+   source ~/.bashrc  # or source ~/.zshrc
+
+6. Verify installation:
+   go version
+
+7. Install Go-based tools:
+   go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+   go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+   go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+   go install -v github.com/OJ/gobuster/v3@latest
+   go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
+8. Add Go bin directory to PATH (if not already):
+   export PATH=$PATH:$(go env GOPATH)/bin
+   # Add this to ~/.bashrc or ~/.zshrc for persistence
+
+9. Verify tools are installed:
+   subfinder -version
+   dnsx -version
+   httpx -version
+   gobuster version
+   nuclei -version
+"""
+        console.print(Panel(
+            go_instructions.strip(),
+            title="[cyan]Go Installation Instructions[/cyan]",
+            border_style="cyan"
+        ))
+        console.print()
+    
+    # Final check
+    console.print("\n[bold cyan]🔍 Verifying installation...[/bold cyan]")
+    still_missing, _ = _check_tools(DEFAULT_TOOLS)
+    if still_missing:
+        console.print(f"[yellow]⚠ Still missing: {', '.join(still_missing)}[/yellow]")
+        console.print("[dim]Please follow the instructions above to install remaining tools.[/dim]\n")
+    else:
+        console.print("[bold green]✓ All tools are now installed![/bold green]\n")
 
 
 @app.command()
