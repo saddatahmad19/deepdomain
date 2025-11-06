@@ -90,7 +90,7 @@ The easiest way to install DeepDomain is using `pipx`, which installs the tool g
 2. **Install DeepDomain:**
    ```bash
    # Install from GitHub (latest version)
-   pipx install git+https://github.com/yourusername/deepdomain.git
+   pipx install git+https://github.com/saddatahmad19/deepdomain.git
    
    # Or install from PyPI (when published)
    pipx install deepdomain
@@ -99,7 +99,7 @@ The easiest way to install DeepDomain is using `pipx`, which installs the tool g
 3. **Install system dependencies:**
    ```bash
    # Run the bootstrap script to install required system tools
-   curl -sSL https://raw.githubusercontent.com/yourusername/deepdomain/main/bootstrap.sh | bash
+   curl -sSL https://raw.githubusercontent.com/saddatahmad19/deepdomain/main/bootstrap.sh | bash
    ```
 
 4. **Run DeepDomain from anywhere:**
@@ -113,7 +113,7 @@ For development or if you prefer local installation:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/deepdomain.git
+   git clone https://github.com/saddatahmad19/deepdomain.git
    cd deepdomain
    ```
 
@@ -245,7 +245,7 @@ If you installed DeepDomain using `pipx`, updating is simple:
 pipx upgrade deepdomain
 
 # Or reinstall from GitHub for latest changes
-pipx reinstall git+https://github.com/yourusername/deepdomain.git
+pipx reinstall git+https://github.com/saddatahmad19/deepdomain.git
 ```
 
 ### Updating Development Installation
