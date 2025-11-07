@@ -32,6 +32,22 @@ DEFAULT_TOOLS = [
 APT_PACKAGE_MAP = {
     "theHarvester": "theharvester",
     "host": "dnsutils",  # host command comes from dnsutils package
+    "nmap": "nmap",
+    "nikto": "nikto",
+    "subfinder": "subfinder",
+    "sublist3r": "sublist3r",
+    "dnsx": "dnsx",
+    "jq": "jq",
+    "nuclei": "nuclei",
+}
+
+# Mapping of tool names to their Go package installation paths
+GO_PACKAGE_MAP = {
+    "subfinder": "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+    "dnsx": "github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
+    "httpx": "github.com/projectdiscovery/httpx/cmd/httpx@latest",
+    "gobuster": "github.com/OJ/gobuster/v3@latest",
+    "nuclei": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
 }
 
 # Go-based tools that need Go installed first
@@ -76,6 +92,11 @@ def _categorize_tools(tools: List[str]) -> Dict[str, List[str]]:
 def _get_apt_package_name(tool: str) -> str:
     """Get the apt package name for a tool."""
     return APT_PACKAGE_MAP.get(tool, tool.lower())
+
+
+def _get_go_package_path(tool: str) -> str:
+    """Get the Go package installation path for a tool."""
+    return GO_PACKAGE_MAP.get(tool, "")
 
 
 @app.command()
