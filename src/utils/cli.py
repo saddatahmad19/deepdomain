@@ -229,16 +229,28 @@ def install_deps(
         console.print("[bold green]✓ All tools are now installed![/bold green]\n")
 
 
-@app.command()
-def run(
-    domain: str = typer.Option(..., "-d", "--domain", help="Target domain (required)"),
-    output: Path | None = typer.Option(None, "-o", "--output", help="Output directory (optional)")
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    domain: str = typer.Option(None, "-d", "--domain", help="Target domain (required)"),
+    output: Path | None = typer.Option(None, "-o", "--output", help="Output directory (optional, defaults to current directory)")
 ):
     """DeepDomain — Advanced Security Reconnaissance Tool
     
     A comprehensive cybersecurity reconnaissance and scanning tool designed for Kali Linux.
     Performs domain reconnaissance, subdomain discovery, information harvesting, and network scanning.
     """
+    # If a subcommand was invoked, don't run the main logic
+    if ctx.invoked_subcommand is not None:
+        return
+    
+    # Domain is required for main command
+    if domain is None:
+        console.print("\n[bold red]✗ Error:[/bold red] Domain is required. Use [cyan]-d <domain>[/cyan] or [cyan]--domain <domain>[/cyan]")
+        console.print("[dim]Example:[/dim] [bold white]deepdomain -d example.com[/bold white]")
+        console.print("[dim]Or use:[/dim] [bold white]deepdomain install-deps[/bold white] to install dependencies\n")
+        raise typer.Exit(code=1)
+    
     # Print startup banner
     console.print("\n" + "="*60, style="bold cyan")
     console.print(Panel.fit(
@@ -248,19 +260,19 @@ def run(
     ), style="bold")
     console.print("="*60 + "\n", style="bold cyan")
     
-    # prompt for output dir if not provided
+    # Use current directory if output not provided
     if output is None:
-        default = Path.cwd()
-        out_str = typer.prompt("The output directory is:", default=str(default))
-        output = Path(out_str)
+        output = Path.cwd()
+    else:
+        # Validate output path if provided
+        if not output.exists():
+            console.print(f"\n[bold red]✗ Error:[/bold red] Output path does not exist: [cyan]{output}[/cyan]")
+            raise typer.Exit(code=1)
+        if not output.is_dir():
+            console.print(f"\n[bold red]✗ Error:[/bold red] Output path is not a directory: [cyan]{output}[/cyan]")
+            raise typer.Exit(code=1)
 
-    if not output.exists():
-        console.print(f"\n[bold red]✗ Error:[/bold red] Output path does not exist: [cyan]{output}[/cyan]")
-        raise typer.Exit(code=1)
-    if not output.is_dir():
-        console.print(f"\n[bold red]✗ Error:[/bold red] Output path is not a directory: [cyan]{output}[/cyan]")
-        raise typer.Exit(code=1)
-
+    # Check for missing tools and prompt to install
     missing, install_cmd = _check_tools(DEFAULT_TOOLS)
     if missing:
         console.print("\n[bold yellow]⚠ Missing Required Tools:[/bold yellow]")
@@ -269,7 +281,8 @@ def run(
             title="[yellow]Install Required Tools[/yellow]",
             border_style="yellow"
         ))
-        console.print(f"[bold cyan]Run:[/bold cyan] [bold white]sudo apt install {install_cmd}[/bold white]\n")
+        console.print(f"[bold cyan]Run:[/bold cyan] [bold white]deepdomain install-deps[/bold white]\n")
+        raise typer.Exit(code=1)
 
     # Define scanning callback
     def scanning_callback(tui_app):
